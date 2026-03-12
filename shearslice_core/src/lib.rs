@@ -36,6 +36,7 @@ mod tests {
             let img_data = to_png(&res, ColorRamp::Inferno);
 
             write_png_to_file(&img_data, format! {"../data/data1_img/{}.png",z}).unwrap();
+            println!("Wrote png {z} to file");
         }
     }
 }

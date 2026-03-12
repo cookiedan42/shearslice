@@ -45,32 +45,51 @@ impl VoxelLayer {
 impl VoxelLayer {
     // x,y,z are indices, find the brick they belong to and query the brick
     pub fn query(&self, x: usize, y: usize, z: usize, layer_id: usize) -> Result<f32, String> {
-        let file_x = (x
-            / (self.layer().index().brick_size()[0] * self.layer().index().node_size()[0]))
-            * self.layer().index().node_size()[0];
-        let file_y = (y
-            / (self.layer().index().brick_size()[1] * self.layer().index().node_size()[1]))
-            * self.layer().index().node_size()[1];
-        let file_z = (z
-            / (self.layer().index().brick_size()[2] * self.layer().index().node_size()[2]))
-            * self.layer().index().node_size()[2];
+        let brick_size = self.layer().index().brick_size();
+        let node_size = self.layer().index().node_size();
 
-        let local_x =
-            x % (self.layer().index().brick_size()[0] * self.layer().index().node_size()[0]);
-        let local_y =
-            y % (self.layer().index().brick_size()[1] * self.layer().index().node_size()[1]);
-        let local_z =
-            z % (self.layer().index().brick_size()[2] * self.layer().index().node_size()[2]);
+        let brick_x = x / brick_size[0];
+        let brick_y = y / brick_size[1];
+        let brick_z = z / brick_size[2];
+
+        let file_x = brick_x / node_size[0];
+        let file_y = brick_y / node_size[1];
+        let file_z = brick_z / node_size[2];
 
         // find the correct file
         let bin_path = format!(
             "{}/variables/{}/0/bundles/0/{}-{}-{}.bin",
-            self.path, layer_id, file_x, file_y, file_z
+            self.path,
+            layer_id,
+            file_x * node_size[0],
+            file_y * node_size[1],
+            file_z * node_size[2]
         );
 
         // TODO: handle the edge case when x and y are not perfect multiples of node size * brick size
 
-        let file_offset = local_z * 32 * 32 + local_y * 32 + local_x;
+        let local_brick_x = brick_x % node_size[0]; //0 - 3
+        let local_brick_y = brick_y % node_size[1]; //0 - 3
+        let local_brick_z = brick_z % node_size[2]; //0 - 3
+
+        let local_voxel_x = x % brick_size[0]; // 0-31
+        let local_voxel_y = y % brick_size[1]; // 0-31
+        let local_voxel_z = z % brick_size[2]; // 0-31
+
+        // sum all bricks before me
+        // add my current offset
+
+        let file_offset = 4
+            * (
+                // offset by completed bricks
+                local_brick_z * 34 * 34* 34
+                + local_brick_y * 34 * 34
+                + local_brick_x * 34
+                // offset within brick
+                + local_voxel_z * 34 * 34
+                + local_voxel_y * 34
+                + local_voxel_x + 1
+            );
 
         let mut file =
             File::open(&bin_path).map_err(|e| format!("Failed to open {}: {}", bin_path, e))?;
