@@ -28,3 +28,7 @@ v3 consider batching reads into the same file
 v4 rayon per file?
 
 */
+
+// for each horizontal cross section, create a 1024 by 1024 png
+// encode the values using the provided colormap in slpk
+// write the png to a file based on z value

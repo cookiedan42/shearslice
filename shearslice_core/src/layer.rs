@@ -11,7 +11,7 @@ pub(crate) struct Layer {
     full_extent: Extent,
     volumes: Vec<Volume>,
     variables: Vec<Variable>,
-    index: Index,
+    index: LayerIndex,
     style: Style,
 }
 
@@ -22,6 +22,14 @@ impl Layer {
 
     pub(crate) fn variables(&self) -> &[Variable] {
         self.variables.as_slice()
+    }
+
+    pub fn volumes(&self) -> &[Volume] {
+        &self.volumes
+    }
+
+    pub fn index(&self) -> &LayerIndex {
+        &self.index
     }
 }
 
@@ -69,10 +77,10 @@ struct VolumeStyle {
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
-struct Index {
-    brick_size: [u32; 3],
+pub(crate) struct LayerIndex {
+    brick_size: [usize; 3],
     node_size: [u32; 3],
-    apron_width: u32,
+    apron_width: usize,
     max_lod_level: u32,
 }
 
@@ -131,22 +139,42 @@ struct Extent {
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Volume {
+pub(crate) struct Volume {
     id: u32,
     dimensions: Vec<Dimension>,
+}
+impl Volume {
+    pub fn dimensions(&self) -> &[Dimension] {
+        &self.dimensions
+    }
 }
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
-struct Dimension {
+pub(crate) struct Dimension {
     name: String,
     label: String,
     unit: String,
-    size: u32,
+    size: usize,
     irregular_spacing: Option<IrregularSpacing>,
     regular_spacing: Option<RegularSpacing>,
     quantity: Option<Quantity>,
+}
+
+impl Dimension {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn size(&self) -> usize {
+        self.size
+    }
+    pub fn regular_spacing(&self) -> Option<RegularSpacing> {
+        self.regular_spacing.clone()
+    }
+    pub fn irregular_spacing(&self) -> Option<IrregularSpacing> {
+        self.irregular_spacing.clone()
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -158,17 +186,36 @@ enum Quantity {
     Time,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
-struct IrregularSpacing {
+pub(crate) struct IrregularSpacing {
     values: Vec<f64>,
 }
+impl IrregularSpacing {
+    pub fn len(&self) -> usize {
+        self.values.len()
+    }
+    pub fn at(&self, index: usize) -> f64 {
+        self.values[index]
+    }
+    pub fn values(&self) -> &[f64] {
+        &self.values
+    }
+}
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
-struct RegularSpacing {
+pub(crate) struct RegularSpacing {
     scale: f64,
     offset: f64,
+}
+impl RegularSpacing {
+    pub fn scale(&self) -> f64 {
+        self.scale
+    }
+    pub fn offset(&self) -> f64 {
+        self.offset
+    }
 }
 
 #[cfg(test)]
@@ -180,5 +227,15 @@ mod tests {
         serde_json::from_str::<Layer>(include_str!("../../data/data1/layer.json")).unwrap();
 
         let _layer = Layer::from_file("../data/data1/layer.json");
+    }
+}
+
+impl LayerIndex {
+    pub fn brick_size(&self) -> [usize; 3] {
+        self.brick_size
+    }
+
+    pub fn apron_width(&self) -> usize {
+        self.apron_width
     }
 }
