@@ -48,25 +48,28 @@ impl VoxelLayer {
         let brick_size = self.layer().index().brick_size();
         let node_size = self.layer().index().node_size();
 
-        let brick_x = x / brick_size[0];
-        let brick_y = y / brick_size[1];
-        let brick_z = z / brick_size[2];
+        let brick_x = x / brick_size[0]; // 0-31
+        let brick_y = y / brick_size[1]; // 0-31
+        let brick_z = z / brick_size[2]; // 0-31
 
-        let file_x = brick_x / node_size[0];
-        let file_y = brick_y / node_size[1];
-        let file_z = brick_z / node_size[2];
+        let file_x = brick_x / node_size[0] * node_size[0]; // 0-28, spacing 4
+        let file_y = brick_y / node_size[1] * node_size[1]; // 0-28, spacing 4
+        let file_z = brick_z / node_size[2] * node_size[2]; // 0
 
         // find the correct file
         let bin_path = format!(
             "{}/variables/{}/0/bundles/0/{}-{}-{}.bin",
             self.path,
             layer_id,
-            file_x * node_size[0],
-            file_y * node_size[1],
-            file_z * node_size[2]
+            file_x,
+            file_y,
+            file_z,
         );
 
+        // println!("bin_path: {bin_path}");
+
         // TODO: handle the edge case when x and y are not perfect multiples of node size * brick size
+
 
         let local_brick_x = brick_x % node_size[0]; //0 - 3
         let local_brick_y = brick_y % node_size[1]; //0 - 3
@@ -79,20 +82,23 @@ impl VoxelLayer {
         // sum all bricks before me
         // add my current offset
 
-        let file_offset = 4
+        let file_offset = 24 + 4
             * (
                 // offset by completed bricks
-                  local_brick_z * (34 * 34 * 34) *4*4
-                + local_brick_y * (34 * 34 * 34) *4
-                + local_brick_x * (34 * 34 * 34)*1
+                  local_brick_z * (34 * 34 * 34) * 4 * 4
+                + local_brick_y * (34 * 34 * 34) * 4
+                + local_brick_x * (34 * 34 * 34) 
+               
                 // offset within brick
-                + (local_voxel_z+1) * 34 * 34 
-                + (local_voxel_y+1) * 34 
-                + (local_voxel_x+1)
+                + (local_voxel_z) * 34 * 34 
+                + (local_voxel_y) * 34 
+                + (local_voxel_x) 
             );
         
-        // off by 1 in each dimension because starting cell has 0 front apron
-
+        // brick 0-0-0 is looking at brick 0-1-0
+        // or 1-0-0, I'm not too sure
+        // so it gets wrong data for 6 rows
+        // then corrects itself ???
 
 
         let mut file =
@@ -100,7 +106,7 @@ impl VoxelLayer {
         file.seek(SeekFrom::Start(file_offset as u64))
             .map_err(|e| format!("Failed to seek: {}", e))?;
 
-        let mut buffer = [0u8; 4];
+        let mut buffer =  [0u8; 4];
         file.read_exact(&mut buffer)
             .map_err(|e| format!("Failed to read data: {}", e))?;
 
@@ -126,4 +132,16 @@ mod tests {
     fn test_from_file() {
         let layer = VoxelLayer::from_file("../data/data1");
     }
+
+
+    #[test]
+    fn test_boundary_values() {
+        let layer = VoxelLayer::from_file("../data/data1");
+        // Test values at brick boundaries
+        for x in 0..1024 {
+            let val = layer.query(x, 512, 0, 0).unwrap();
+            println!("x={}: {}", x, val);
+        }
+    }
 }
+

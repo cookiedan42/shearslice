@@ -22,21 +22,27 @@ v4 rayon per file?
 
 #[cfg(test)]
 mod tests {
-    use crate::png::{ColorRamp, to_png, write_png_to_file};
+    use crate::png::{ColorRamp, to_bmp, to_png, write_png_to_file};
     use crate::voxel_layer::VoxelLayer;
 
     #[test]
     fn test_plane() {
-        let layer = VoxelLayer::from_file("../data/data1");
+        let layer = VoxelLayer::from_file("../data/f773");
 
         for z in 0..49 {
             let res = layer.query_plane(z).unwrap();
             assert!(res.len() == 1024 * 1024);
 
-            let img_data = to_png(&res, ColorRamp::Inferno);
+            to_bmp(
+                &res,
+                ColorRamp::Inferno,
+                format! {"../data/data1_img/{}.bmp",z},
+            );
 
-            write_png_to_file(&img_data, format! {"../data/data1_img/{}.png",z}).unwrap();
-            println!("Wrote png {z} to file");
+            // let img_data = to_png(&res, ColorRamp::Inferno);
+
+            // write_png_to_file(&img_data, format! {"../data/data1_img/{}.png",z}).unwrap();
+            println!("Wrote bmp {z} to file");
         }
     }
 }

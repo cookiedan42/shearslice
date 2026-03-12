@@ -70,3 +70,33 @@ pub fn write_png_to_file<P: AsRef<Path>>(png_data: &[u8], path: P) -> io::Result
     file.write_all(png_data)?;
     Ok(())
 }
+
+pub fn to_bmp<P: AsRef<Path>>(data: &[f32], color_ramp: ColorRamp, path: P) {
+    let mut img = ImageBuffer::new(1024, 1024);
+
+    // scale the data to the range [0.0, 1.0]
+    let max_value = data.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
+
+    let min_value = data.iter().fold(f32::INFINITY, |a, &b| a.min(b));
+    println!("min_value: {min_value}");
+    println!("max_value: {max_value}");
+
+    let data = data
+        .iter()
+        .map(|&value| (value - min_value) / (max_value - min_value));
+
+    for (i, value) in data.enumerate() {
+        let x = (i % 1024 as usize) as u32;
+        let y = (i / 1024 as usize) as u32;
+
+        let (r, g, b) = apply_color_ramp(value, &color_ramp);
+
+        // if x % 2 == 0 || y % 2 == 0 {
+        img.put_pixel(x, y, Rgb([r, g, b]));
+        // } else {
+        // img.put_pixel(x, y, Rgb([255, 255, 255]));
+        // }
+    }
+
+    img.save(path).unwrap();
+}
