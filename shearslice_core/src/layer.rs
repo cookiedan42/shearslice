@@ -79,9 +79,22 @@ struct VolumeStyle {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct LayerIndex {
     brick_size: [usize; 3],
-    node_size: [u32; 3],
+    node_size: [usize; 3],
     apron_width: usize,
     max_lod_level: u32,
+}
+
+impl LayerIndex {
+    pub fn brick_size(&self) -> [usize; 3] {
+        self.brick_size
+    }
+
+    pub fn node_size(&self) -> [usize; 3] {
+        self.node_size
+    }
+    pub fn apron_width(&self) -> usize {
+        self.apron_width
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -227,15 +240,5 @@ mod tests {
         serde_json::from_str::<Layer>(include_str!("../../data/data1/layer.json")).unwrap();
 
         let _layer = Layer::from_file("../data/data1/layer.json");
-    }
-}
-
-impl LayerIndex {
-    pub fn brick_size(&self) -> [usize; 3] {
-        self.brick_size
-    }
-
-    pub fn apron_width(&self) -> usize {
-        self.apron_width
     }
 }

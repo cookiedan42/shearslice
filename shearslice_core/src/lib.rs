@@ -1,21 +1,8 @@
 mod layer;
+mod png;
 mod variable_index;
 mod voxel_layer;
 
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
 /*
 
 1. use serde to serialize the json files
@@ -32,3 +19,23 @@ v4 rayon per file?
 // for each horizontal cross section, create a 1024 by 1024 png
 // encode the values using the provided colormap in slpk
 // write the png to a file based on z value
+
+#[cfg(test)]
+mod tests {
+    use crate::png::{ColorRamp, to_png, write_png_to_file};
+    use crate::voxel_layer::VoxelLayer;
+
+    #[test]
+    fn test_plane() {
+        let layer = VoxelLayer::from_file("../data/data1");
+
+        for z in 0..49 {
+            let res = layer.query_plane(z).unwrap();
+            assert!(res.len() == 1024 * 1024);
+
+            let img_data = to_png(&res, ColorRamp::Inferno);
+
+            write_png_to_file(&img_data, format! {"../data/data1_img/{}.png",z}).unwrap();
+        }
+    }
+}
