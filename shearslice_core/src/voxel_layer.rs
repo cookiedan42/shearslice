@@ -82,14 +82,18 @@ impl VoxelLayer {
         let file_offset = 4
             * (
                 // offset by completed bricks
-                local_brick_z * 34 * 34* 34
-                + local_brick_y * 34 * 34
-                + local_brick_x * 34
+                  local_brick_z * (34 * 34 * 34) *4*4
+                + local_brick_y * (34 * 34 * 34) *4
+                + local_brick_x * (34 * 34 * 34)*1
                 // offset within brick
-                + local_voxel_z * 34 * 34
-                + local_voxel_y * 34
-                + local_voxel_x + 1
+                + (local_voxel_z+1) * 34 * 34 
+                + (local_voxel_y+1) * 34 
+                + (local_voxel_x+1)
             );
+        
+        // off by 1 in each dimension because starting cell has 0 front apron
+
+
 
         let mut file =
             File::open(&bin_path).map_err(|e| format!("Failed to open {}: {}", bin_path, e))?;
