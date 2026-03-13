@@ -9,7 +9,8 @@ use std::path::Path;
 
 use image::codecs::{gif::GifEncoder, png::PngEncoder};
 use image::{
-    Delay, ExtendedColorType, Frame, ImageBuffer, ImageEncoder, Rgb, RgbImage, Rgba, RgbaImage,
+    Delay, DynamicImage, ExtendedColorType, Frame, ImageBuffer, ImageEncoder, Rgb, RgbImage, Rgba,
+    RgbaImage,
 };
 
 pub enum ColorRamp {
@@ -56,7 +57,10 @@ pub fn to_buffer(
         let y = (i / 1024 as usize) as u32;
         img.put_pixel(x, y, Rgb([r, g, b]));
     }
-    img
+
+    let d = DynamicImage::ImageRgb8(img);
+    let d = d.rotate270();
+    d.to_rgb8()
 }
 
 pub fn to_png(data: &[f32], color_ramp: &crate::layer::ColorRamp) -> Vec<u8> {
@@ -113,27 +117,4 @@ pub fn write_png_to_file<P: AsRef<Path>>(
     let mut file = File::create(path)?;
     file.write_all(&png_bytes)?;
     Ok(())
-}
-
-#[cfg(feature = "std")]
-pub fn to_bmp<P: AsRef<Path>>(data: &[f32], color_ramp: ColorRamp, path: P) {
-    let max_val = data.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
-
-    let min_val = data.iter().fold(f32::INFINITY, |a, &b| a.min(b));
-    let data = data
-        .iter()
-        .map(|&value| (value - min_val) / (max_val - min_val));
-
-    let mut img = ImageBuffer::new(1024, 1024);
-
-    for (i, value) in data.enumerate() {
-        let x = (i % 1024 as usize) as u32;
-        let y = (i / 1024 as usize) as u32;
-
-        let (r, g, b) = apply_color_ramp(value, &color_ramp);
-
-        img.put_pixel(x, y, Rgb([r, g, b]));
-    }
-
-    img.save(path).unwrap();
 }
