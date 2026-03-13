@@ -3,6 +3,10 @@ mod png;
 mod variable_index;
 mod voxel_layer;
 
+pub use layer::Layer;
+pub use variable_index::Index;
+pub use voxel_layer::VoxelLayer;
+
 /*
 
 1. use serde to serialize the json files
@@ -22,27 +26,29 @@ v4 rayon per file?
 
 #[cfg(test)]
 mod tests {
-    use crate::png::{ColorRamp, to_bmp, to_png, write_png_to_file};
+    use crate::png::{ColorRamp, to_bmp, to_gif, to_png, write_png_to_file};
     use crate::voxel_layer::VoxelLayer;
 
     #[test]
     fn test_plane() {
         let layer = VoxelLayer::from_file("../data/f773");
 
+        let mut buffers = Vec::new();
+
         for z in 0..49 {
             let res = layer.query_plane(z).unwrap();
             assert!(res.len() == 1024 * 1024);
 
-            to_bmp(
-                &res,
-                ColorRamp::Inferno,
-                format! {"../data/data1_img/{}.bmp",z},
-            );
+            let img_data = to_png(&res, ColorRamp::Inferno);
 
-            // let img_data = to_png(&res, ColorRamp::Inferno);
+            write_png_to_file(&img_data, format! {"../data/img/{}.png",z}).unwrap();
 
-            // write_png_to_file(&img_data, format! {"../data/data1_img/{}.png",z}).unwrap();
-            println!("Wrote bmp {z} to file");
+            println!("Wrote png {z} to file");
+
+            buffers.push(img_data);
         }
+
+        to_gif(buffers, "../data/img/all.gif");
+        println!("Wrote gif to file");
     }
 }

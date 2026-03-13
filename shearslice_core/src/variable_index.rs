@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Index {
+pub struct Index {
     volume_size: [u32; 3],
     trees: Vec<Tree>,
 }
@@ -18,8 +18,12 @@ struct Tree {
 }
 
 impl Index {
+    #[cfg(feature = "std")]
     pub fn from_file(path: &str) -> Self {
         serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+    }
+    pub fn from_str(json: &str) -> Self {
+        serde_json::from_str(json).unwrap()
     }
 }
 

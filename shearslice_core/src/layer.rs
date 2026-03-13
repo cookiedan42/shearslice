@@ -1,9 +1,10 @@
+use core::cmp::max;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Layer {
+pub struct Layer {
     layer_type: LayerType,
     version: String, // string of float
     name: String,
@@ -19,6 +20,9 @@ impl Layer {
     pub fn from_file(path: &str) -> Self {
         serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
     }
+    pub fn from_str(json: &str) -> Self {
+        serde_json::from_str(json).unwrap()
+    }
 
     pub(crate) fn variables(&self) -> &[Variable] {
         self.variables.as_slice()
@@ -30,6 +34,31 @@ impl Layer {
 
     pub fn index(&self) -> &LayerIndex {
         &self.index
+    }
+
+    pub fn tails(&self, var_id: usize) -> Vec<(usize, usize, usize)> {
+        let brick_size = self.index().brick_size();
+        let node_size = self.index().node_size();
+
+        // Get volume dimensions from layer
+        let volumes = self.volumes();
+        let dims = volumes[0].dimensions();
+
+        let files_x = dims[0].size() / brick_size[0] / node_size[0];
+        let files_y = dims[1].size() / brick_size[1] / node_size[1];
+        let files_z = dims[2].size() / brick_size[2] / node_size[2];
+
+        let mut paths = Vec::new();
+
+        // List actual files by iterating through possible positions
+        for file_z in 0..max(files_z, 1) {
+            for file_x in 0..max(files_x, 1) {
+                for file_y in 0..max(files_y, 1) {
+                    paths.push((file_x, file_y, file_z));
+                }
+            }
+        }
+        paths
     }
 }
 
@@ -77,7 +106,7 @@ struct VolumeStyle {
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct LayerIndex {
+pub struct LayerIndex {
     brick_size: [usize; 3],
     node_size: [usize; 3],
     apron_width: usize,
@@ -101,7 +130,7 @@ impl LayerIndex {
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Variable {
-    id: u32,
+    id: usize,
     name: String,
     description: String,
     unit: String,
@@ -110,8 +139,11 @@ pub(crate) struct Variable {
 }
 
 impl Variable {
-    pub fn id(&self) -> u32 {
+    pub fn id(&self) -> usize {
         self.id
+    }
+    pub fn name(&self) -> &str {
+        &self.name
     }
 }
 
