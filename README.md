@@ -12,7 +12,7 @@ A library for slicing a 3D data along various elevations.
 ### data visualization
 - [x] assemble a png image from the data
 - [x] write a gif from slices of the data
-- [ ] use color ramp from slpk file
+- [x] use color ramp from slpk file
 ### Frontend integation
 - [x] obtaining required buffers in webapp
 - [x] displaying georeferenced png file in webapp
