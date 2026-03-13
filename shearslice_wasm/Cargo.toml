@@ -11,6 +11,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 shearslice_core = { path = "../shearslice_core", default-features = false }
+hashbrown = { version = "0.16.1", default-features = false , features = ["default-hasher"] }
 
 log = { default-features = false, version = "0.4.29" }
 serde = { version = "1.0.228", default-features = false, features = ["derive","alloc",] } # alloc is for no_std, derive is needed

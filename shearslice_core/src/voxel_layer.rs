@@ -12,10 +12,10 @@ use std::io::{Read, Seek, SeekFrom};
 
 pub struct VoxelLayer {
     layer: Layer,
-    // indices: Vec<Index>,
     bins: HashMap<(usize, usize, usize, usize), Vec<u8>>,
 }
 
+/// bin key is layer xyz
 impl VoxelLayer {
     #[cfg(feature = "std")]
     pub fn from_file(path: &str) -> Self {

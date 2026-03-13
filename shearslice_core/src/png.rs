@@ -7,9 +7,7 @@ use std::io::{self, Write};
 #[cfg(feature = "std")]
 use std::path::Path;
 
-#[cfg(feature = "std")]
 use image::codecs::{gif::GifEncoder, png::PngEncoder};
-#[cfg(feature = "std")]
 use image::{
     Delay, ExtendedColorType, Frame, ImageBuffer, ImageEncoder, Rgb, RgbImage, Rgba, RgbaImage,
 };
@@ -43,26 +41,32 @@ fn apply_color_ramp(value: f32, ramp: &ColorRamp) -> (u8, u8, u8) {
     (r as u8, g as u8, b as u8)
 }
 
-pub fn to_png(data: &[f32], color_ramp: ColorRamp) -> ImageBuffer<Rgb<u8>, Vec<u8>> {
+pub fn to_buffer(
+    data: &[f32],
+    color_ramp: &crate::layer::ColorRamp,
+) -> ImageBuffer<Rgb<u8>, Vec<u8>> {
     let mut img = ImageBuffer::new(1024, 1024);
 
     // scale the data to the range [0.0, 1.0]
-    let max_value = data.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
 
-    let min_value = data.iter().fold(f32::INFINITY, |a, &b| a.min(b));
+    let data = data.iter().map(|v| color_ramp.eval(*v));
 
-    let data = data
-        .iter()
-        .map(|&value| (value - min_value) / (max_value - min_value));
-
-    for (i, value) in data.enumerate() {
+    for (i, [r, g, b, _]) in data.enumerate() {
         let x = (i % 1024 as usize) as u32;
         let y = (i / 1024 as usize) as u32;
-
-        let (r, g, b) = apply_color_ramp(value, &color_ramp);
         img.put_pixel(x, y, Rgb([r, g, b]));
     }
     img
+}
+
+pub fn to_png(data: &[f32], color_ramp: &crate::layer::ColorRamp) -> Vec<u8> {
+    let buffer = to_buffer(data, color_ramp);
+    let mut png_bytes = Vec::new();
+    let encoder = PngEncoder::new(&mut png_bytes);
+    encoder
+        .write_image(buffer.as_raw(), 1024, 1024, ExtendedColorType::Rgb8)
+        .unwrap();
+    png_bytes
 }
 
 #[cfg(feature = "std")]

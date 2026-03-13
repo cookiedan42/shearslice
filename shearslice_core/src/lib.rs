@@ -4,6 +4,7 @@ mod variable_index;
 mod voxel_layer;
 
 pub use layer::Layer;
+pub use png::to_png;
 pub use variable_index::Index;
 pub use voxel_layer::VoxelLayer;
 
@@ -26,7 +27,7 @@ v4 rayon per file?
 
 #[cfg(test)]
 mod tests {
-    use crate::png::{ColorRamp, to_bmp, to_gif, to_png, write_png_to_file};
+    use crate::png::{ColorRamp, to_bmp, to_buffer, to_gif, write_png_to_file};
     use crate::voxel_layer::VoxelLayer;
 
     #[test]
@@ -35,11 +36,35 @@ mod tests {
 
         let mut buffers = Vec::new();
 
+        let [s, e] = layer.layer().styles().variable_styles()[0]
+            .transfer_function()
+            .stretch_range();
+
         for z in 0..49 {
             let res = layer.query_plane(z).unwrap();
             assert!(res.len() == 1024 * 1024);
 
-            let img_data = to_png(&res, ColorRamp::Inferno);
+            // normalise data
+            let res1: Vec<f32> = res
+                .iter()
+                .map(|v| v.clamp(*s, *e))
+                .map(|v| (v - *s) / (*e - *s))
+                // .map(|v| (v - min_value) / (dist_max_value - dist_min_value))
+                // .map(|v| (v - min_value) / (dist_max_value - dist_min_value))
+                .collect();
+
+            println!(
+                "min: {}, max: {}",
+                res1.iter().fold(f32::INFINITY, |a, &b| a.min(b)),
+                res1.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b))
+            );
+
+            let img_data = to_buffer(
+                &res1,
+                layer.layer().styles().variable_styles()[0]
+                    .transfer_function()
+                    .color_stops(),
+            );
 
             write_png_to_file(&img_data, format! {"../data/img/{}.png",z}).unwrap();
 
