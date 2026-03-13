@@ -128,11 +128,7 @@ pub fn to_bmp<P: AsRef<Path>>(data: &[f32], color_ramp: ColorRamp, path: P) {
 
         let (r, g, b) = apply_color_ramp(value, &color_ramp);
 
-        // if x % 2 == 0 || y % 2 == 0 {
         img.put_pixel(x, y, Rgb([r, g, b]));
-        // } else {
-        // img.put_pixel(x, y, Rgb([255, 255, 255]));
-        // }
     }
 
     img.save(path).unwrap();
