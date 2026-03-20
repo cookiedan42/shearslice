@@ -78,17 +78,17 @@ pub fn to_gif<P: AsRef<Path>>(
     buffers: Vec<ImageBuffer<Rgb<u8>, Vec<u8>>>,
     path: P,
 ) -> io::Result<()> {
-    let mut file = File::create(path)?;
+    let file = File::create(path)?;
     let delay = Delay::from_numer_denom_ms(10, 1);
 
     let mut enc = GifEncoder::new(file);
-    enc.set_repeat(image::codecs::gif::Repeat::Infinite);
+    let _ = enc.set_repeat(image::codecs::gif::Repeat::Infinite);
 
     // Convert each ImageBuffer to a Frame and encode
     for img in buffers {
         let img = rgb_to_rgba(img);
         let frame = Frame::from_parts(img, 0, 0, delay);
-        enc.encode_frame(frame);
+        let _ = enc.encode_frame(frame);
     }
 
     Ok(())

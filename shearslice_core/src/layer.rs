@@ -42,7 +42,8 @@ impl Layer {
         &self.style
     }
 
-    pub fn tails(&self, var_id: usize) -> Vec<(usize, usize, usize)> {
+    /// return the 3 indices of the node files for a given variable id
+    pub fn tails(&self, _var_id: usize) -> Vec<(usize, usize, usize)> {
         let brick_size = self.index().brick_size();
         let node_size = self.index().node_size();
 
@@ -295,6 +296,7 @@ pub(crate) struct Dimension {
     label: String,
     unit: String,
     size: usize,
+    // TODO: probably split Dimension into two untagged enum variants
     irregular_spacing: Option<IrregularSpacing>,
     regular_spacing: Option<RegularSpacing>,
     quantity: Option<Quantity>,
@@ -313,6 +315,74 @@ impl Dimension {
     pub fn irregular_spacing(&self) -> Option<IrregularSpacing> {
         self.irregular_spacing.clone()
     }
+    pub fn values(&self) -> Vec<f32> {
+        if let Some(sp) = &self.irregular_spacing {
+            return sp.values.clone();
+        }
+        if let Some(sp) = &self.regular_spacing {
+            return (0..self.size)
+                .map(|i| sp.offset + sp.scale * i as f32)
+                .collect();
+        }
+        unreachable!("Should be in one of the two cases above");
+    }
+
+    /// find the index closest to the given value
+    pub fn find(&self, value: f32) -> usize {
+        match self.irregular_spacing() {
+            Some(_) => self.find_irregular(value),
+            None => self.find_regular(value),
+        }
+    }
+    fn find_regular(&self, value: f32) -> usize {
+        let spacing = self.regular_spacing().unwrap();
+        if value <= spacing.offset() {
+            return 0;
+        } else if value >= (spacing.offset() + spacing.scale() * ((self.size() - 1) as f32)) {
+            return self.size() - 1;
+        } else {
+            // TODO: convert to binary search
+            for i in 0..self.size() {
+                if value < spacing.at(i) {
+                    continue;
+                }
+                // compare current value to the next value
+                let low = spacing.at(i);
+                let high = spacing.at(i + 1);
+                if value - low < high - value {
+                    return i;
+                } else {
+                    return i + 1;
+                }
+            }
+        }
+        unreachable!("Should be in one of the three cases above");
+    }
+    fn find_irregular(&self, value: f32) -> usize {
+        let spacing = self.irregular_spacing().unwrap();
+
+        if value <= spacing.at(0) {
+            return 0;
+        } else if value >= spacing.at(spacing.len() - 1) {
+            return spacing.len() - 1;
+        }
+
+        match spacing
+            .values()
+            .binary_search_by(|a| a.partial_cmp(&value).unwrap())
+        {
+            Ok(idx) => idx,
+            Err(idx) => {
+                let low = spacing.at(idx);
+                let high = spacing.at(idx + 1);
+                if value - low < high - value {
+                    idx
+                } else {
+                    idx + 1
+                }
+            }
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -327,16 +397,16 @@ enum Quantity {
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct IrregularSpacing {
-    values: Vec<f64>,
+    values: Vec<f32>,
 }
 impl IrregularSpacing {
     pub fn len(&self) -> usize {
         self.values.len()
     }
-    pub fn at(&self, index: usize) -> f64 {
+    pub fn at(&self, index: usize) -> f32 {
         self.values[index]
     }
-    pub fn values(&self) -> &[f64] {
+    pub fn values(&self) -> &[f32] {
         &self.values
     }
 }
@@ -344,14 +414,19 @@ impl IrregularSpacing {
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct RegularSpacing {
-    scale: f64,
-    offset: f64,
+    // space between values
+    scale: f32,
+    // offset of the first value
+    offset: f32,
 }
 impl RegularSpacing {
-    pub fn scale(&self) -> f64 {
+    pub fn scale(&self) -> f32 {
         self.scale
     }
-    pub fn offset(&self) -> f64 {
+    pub fn at(&self, index: usize) -> f32 {
+        self.offset + self.scale * index as f32
+    }
+    pub fn offset(&self) -> f32 {
         self.offset
     }
 }

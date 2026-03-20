@@ -15,25 +15,18 @@ pub struct VoxelLayer {
     bins: HashMap<(usize, usize, usize, usize), Vec<u8>>,
 }
 
-/// bin key is layer xyz
+/// Constructors
 impl VoxelLayer {
     #[cfg(feature = "std")]
     pub fn from_file(path: &str) -> Self {
         let layer = Layer::from_file(&format! {"{path}/layer.json"});
 
         let node_size = layer.index().node_size();
-        let brick_size = layer.index().brick_size();
         let mut bins = HashMap::new();
 
         // Get volume dimensions from layer
         let volumes = layer.volumes();
         if let Some(volume) = volumes.first() {
-            let dims = volume.dimensions();
-
-            let files_x = dims[0].size() / brick_size[0] / node_size[0];
-            let files_y = dims[1].size() / brick_size[1] / node_size[1];
-            let files_z = dims[2].size() / brick_size[2] / node_size[2];
-
             for var in layer.variables().into_iter() {
                 let var_id = var.id();
                 let paths = layer.tails(var_id);
@@ -64,18 +57,39 @@ impl VoxelLayer {
         Self { layer, bins }
     }
 
+    /// HashMap Keys are (layer_id, file_x, file_y, file_z)
     pub fn new(layer: Layer, bins: HashMap<(usize, usize, usize, usize), Vec<u8>>) -> Self {
         Self { layer, bins }
     }
 }
 
+/// Accessors
 impl VoxelLayer {
     pub fn layer(&self) -> &Layer {
         &self.layer
     }
+    pub fn get_xy(&self) -> Vec<(f32, f32)> {
+        let x_vals = self.layer().volumes()[0].dimensions()[0].values();
+        let y_vals = self.layer().volumes()[0].dimensions()[1].values();
+
+        x_vals
+            .iter()
+            .map(|x| y_vals.iter().map(|y| (*x, *y)))
+            .flatten()
+            .collect()
+    }
 }
 
+/// Query data
 impl VoxelLayer {
+    pub fn query_geometry(&self, x: f32, y: f32, z: f32, layer_id: usize) -> f32 {
+        let x_index = self.layer().volumes()[0].dimensions()[0].find(x);
+        let y_index = self.layer().volumes()[0].dimensions()[1].find(y);
+        let z_index = self.layer().volumes()[0].dimensions()[2].find(z);
+
+        self.query(x_index, y_index, z_index, layer_id)
+    }
+
     // x,y,z are indices, find the brick they belong to and query the brick
     pub fn query(&self, x: usize, y: usize, z: usize, layer_id: usize) -> f32 {
         let brick_size = self.layer().index().brick_size();
@@ -119,17 +133,34 @@ impl VoxelLayer {
         // Read 4 bytes at the offset
         let buffer: [u8; 4] = bin_data[file_offset..file_offset + 4].try_into().unwrap();
 
-        let value = f32::from_le_bytes(buffer);
-
-        value
+        f32::from_le_bytes(buffer)
     }
 
     // z is the index of the plane, find all the values in that plane
-    pub fn query_plane(&self, z: usize) -> Result<Vec<f32>, String> {
-        Ok((0..1024)
-            .map(|x| (0..1024).map(move |y| self.query(x, y, z, 0)))
-            .flatten()
+    pub fn query_plane(&self, z: i32) -> Result<Vec<f32>, String> {
+        let x_len = self.layer().volumes()[0].dimensions()[0].size();
+        let y_len = self.layer().volumes()[0].dimensions()[1].size();
+        let z_len = self.layer().volumes()[0].dimensions()[2].size();
+        let z = z.clamp(0, (z_len - 1) as i32) as usize;
+
+        Ok((0..x_len)
+            .flat_map(|x| (0..y_len).map(move |y| self.query(x, y, z, 0)))
             .collect())
+    }
+
+    pub fn query_arr(&self, arr: &[usize], z: i32) -> Result<Vec<f32>, String> {
+        let x_len = self.layer().volumes()[0].dimensions()[0].size();
+        let y_len = self.layer().volumes()[0].dimensions()[1].size();
+        let z_len = self.layer().volumes()[0].dimensions()[2].size();
+
+        let r = arr.iter().enumerate().map(|(i, v)| {
+            let x1 = i / 1024;
+            let y1 = i % 1024;
+            let z1 = (z + (*v as i32)).clamp(0, (z_len - 1) as i32) as usize;
+            self.query(x1, y1, z1, 0)
+        });
+
+        Ok(r.collect())
     }
 }
 
