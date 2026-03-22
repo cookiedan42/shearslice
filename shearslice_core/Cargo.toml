@@ -19,6 +19,7 @@ hashbrown = { version = "0.16.1", default-features = false , features = ["defaul
 colorous = {version = "1.0.16", default-features = false }
 image = {version = "0.25.9", default-features = false, features = ["png","bmp","gif"]}
 serde = { version = "1.0.228", default-features = false, features = ["derive","alloc",] } # alloc is for no_std, derive is needed
+num-traits = "0.2.19"
 
 [dev-dependencies]
 rstest = "0.25.0"

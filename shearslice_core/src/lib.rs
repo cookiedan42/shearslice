@@ -27,7 +27,7 @@ v4 rayon per file?
 
 #[cfg(test)]
 mod tests {
-    use crate::png::{ColorRamp, to_bmp, to_buffer, to_gif, write_png_to_file};
+    use crate::png::{ColorRamp, to_buffer, to_gif, write_png_to_file};
     use crate::voxel_layer::VoxelLayer;
 
     #[test]
@@ -52,12 +52,6 @@ mod tests {
                 // .map(|v| (v - min_value) / (dist_max_value - dist_min_value))
                 // .map(|v| (v - min_value) / (dist_max_value - dist_min_value))
                 .collect();
-
-            println!(
-                "min: {}, max: {}",
-                res1.iter().fold(f32::INFINITY, |a, &b| a.min(b)),
-                res1.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b))
-            );
 
             let img_data = to_buffer(
                 &res1,

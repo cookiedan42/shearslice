@@ -94,6 +94,13 @@ impl VoxelLayer {
     pub fn query(&self, x: usize, y: usize, z: usize, layer_id: usize) -> f32 {
         let brick_size = self.layer().index().brick_size();
         let node_size = self.layer().index().node_size();
+        let apron_width = self.layer().index().apron_width();
+
+        let skip: [usize; 3] = [
+            brick_size[0] + apron_width + apron_width,
+            brick_size[1] + apron_width + apron_width,
+            brick_size[2] + apron_width + apron_width,
+        ];
 
         let brick_x = x / brick_size[0]; // 0-31
         let brick_y = y / brick_size[1]; // 0-31
@@ -103,8 +110,6 @@ impl VoxelLayer {
         let file_y = brick_y / node_size[1] * node_size[1]; // 0-28, spacing 4
         let file_z = brick_z / node_size[2] * node_size[2]; // 0
 
-        // TODO: handle the edge case when x and y are not perfect multiples of node size * brick size
-
         let local_brick_x = brick_x % node_size[0]; //0 - 3
         let local_brick_y = brick_y % node_size[1]; //0 - 3
         let local_brick_z = brick_z % node_size[2]; //0 - 3
@@ -113,16 +118,17 @@ impl VoxelLayer {
         let local_voxel_y = y % brick_size[1]; // 0-31
         let local_voxel_z = z % brick_size[2]; // 0-31
 
-        let file_offset = 24 // 6 byte header
+        let file_offset = 24 // 24 byte header
+          // 4 because f32 is 4 bytes
             + 4 * (
                 // offset by completed bricks
-                local_brick_z * (34 * 34 * 34) * 4 * 4
-                + local_brick_y * (34 * 34 * 34) * 4
-                + local_brick_x * (34 * 34 * 34)
+                local_brick_z * (skip[0] * skip[1] * skip[2]) * node_size[0] * node_size[1]
+                + local_brick_y * (skip[0] * skip[1] * skip[2]) * node_size[0]
+                + local_brick_x * (skip[0] * skip[1] * skip[2])
                 // offset within brick
-                + (local_voxel_z) * 34 * 34
-                + (local_voxel_y) * 34
-                + (local_voxel_x)
+                + (local_voxel_z+1) * skip[0] * skip[1]
+                + (local_voxel_y+1) * skip[0]
+                + (local_voxel_x+1) 
             );
 
         let bin_data = self

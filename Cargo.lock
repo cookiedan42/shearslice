@@ -543,6 +543,7 @@ dependencies = [
  "colorous",
  "hashbrown",
  "image",
+ "num-traits",
  "rstest",
  "serde",
  "serde_json",

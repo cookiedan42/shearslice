@@ -68,7 +68,7 @@ pub struct PointXy {
 }
 
 #[wasm_bindgen]
-pub struct PointXz {
+pub struct PointXyz {
     pub x: f32,
     pub y: f32,
     pub z: f32,
@@ -183,11 +183,11 @@ impl VoxelData {
 
     /// Query the data at a given array of x,y,z coordinates
     /// return a png image of the data
-    pub fn query_arr_geometry(&self, arr: &[PointXyz], layer_id: usize) -> js_sys::Uint8Array {
+    pub fn query_arr_geometry(&self, arr: Vec<PointXyz>, layer_id: usize) -> js_sys::Uint8Array {
         let data = arr
             .iter()
             .map(|v| self.layer.query_geometry(v.x, v.y, v.z, layer_id))
-            .collect();
+            .collect::<Vec<_>>();
         let [s, e] = self.layer.layer().styles().variable_styles()[0]
             .transfer_function()
             .stretch_range();
