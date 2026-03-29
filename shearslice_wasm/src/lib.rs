@@ -94,6 +94,8 @@ impl VoxelData {
         let mut vec_values: Vec<Vec<u8>> = Vec::new();
 
         let node_size = layer.index().node_size();
+        let brick_size = layer.index().brick_size();
+        let apron_width = layer.index().apron_width();
 
         // Convert each item in the array to Vec<u8>
         for i in 0..values.length() {
@@ -113,7 +115,19 @@ impl VoxelData {
                 return (x, y, z, v);
             })
         {
-            map.insert((layer_id, x, y, z), v);
+            map.insert(
+                (layer_id, x, y, z),
+                shearslice_core::Node::from_bin(
+                    &v,
+                    node_size[0],
+                    node_size[1],
+                    node_size[2],
+                    brick_size[0],
+                    brick_size[1],
+                    brick_size[2],
+                    apron_width,
+                ),
+            );
         }
 
         Self {

@@ -31,7 +31,7 @@ impl Layer {
         self.variables.as_slice()
     }
 
-    pub fn volumes(&self) -> &[Volume] {
+    pub(crate) fn volumes(&self) -> &[Volume] {
         &self.volumes
     }
 
@@ -78,7 +78,7 @@ pub struct Style {
     variable_styles: Vec<VariableStyle>,
 }
 impl Style {
-    pub fn volume_styles(&self) -> &[VolumeStyle] {
+    pub(crate) fn volume_styles(&self) -> &[VolumeStyle] {
         &self.volume_styles
     }
     pub fn current_variable_id(&self) -> u32 {
@@ -171,11 +171,15 @@ struct ColorStop {
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
-struct VolumeStyle {
+pub(crate) struct VolumeStyle {
     volume_id: u32,
-    vertical_exaggeration: f64,
+    vertical_exaggeration: f32,
 }
-
+impl VolumeStyle {
+    pub(crate) fn vertical_exaggeration(&self) -> f32 {
+        self.vertical_exaggeration
+    }
+}
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
@@ -328,27 +332,27 @@ impl Dimension {
     }
 
     /// find the index closest to the given value
-    pub fn find(&self, value: f32) -> usize {
+    pub fn find(&self, value: f32, vertical_exaggeration: Option<f32>) -> usize {
         match self.irregular_spacing() {
-            Some(_) => self.find_irregular(value),
-            None => self.find_regular(value),
+            Some(_) => self.find_irregular(value, vertical_exaggeration),
+            None => self.find_regular(value, vertical_exaggeration),
         }
     }
-    fn find_regular(&self, value: f32) -> usize {
+    fn find_regular(&self, value: f32, vertical_exaggeration: Option<f32>) -> usize {
         let spacing = self.regular_spacing().unwrap();
         if value <= spacing.offset() {
             return 0;
-        } else if value >= (spacing.offset() + spacing.scale() * ((self.size() - 1) as f32)) {
+        } else if value >= spacing.at(self.size() - 1, vertical_exaggeration) {
             return self.size() - 1;
         } else {
             // TODO: convert to binary search
             for i in 0..self.size() {
-                if value < spacing.at(i) {
+                if value < spacing.at(i, vertical_exaggeration) {
                     continue;
                 }
                 // compare current value to the next value
-                let low = spacing.at(i);
-                let high = spacing.at(i + 1);
+                let low = spacing.at(i, vertical_exaggeration);
+                let high = spacing.at(i + 1, vertical_exaggeration);
                 if value - low < high - value {
                     return i;
                 } else {
@@ -358,7 +362,9 @@ impl Dimension {
         }
         unreachable!("Should be in one of the three cases above");
     }
-    fn find_irregular(&self, value: f32) -> usize {
+    fn find_irregular(&self, value: f32, _vertical_exaggeration: Option<f32>) -> usize {
+        // TODO: implement vertical_exaggeration if/when needed
+
         let spacing = self.irregular_spacing().unwrap();
 
         if value <= spacing.at(0) {
@@ -423,8 +429,10 @@ impl RegularSpacing {
     pub fn scale(&self) -> f32 {
         self.scale
     }
-    pub fn at(&self, index: usize) -> f32 {
-        self.offset + self.scale * index as f32
+    pub fn at(&self, index: usize, vertical_exaggeration: Option<f32>) -> f32 {
+        let vertical_exaggeration = vertical_exaggeration.unwrap_or(1.0);
+
+        self.offset + (self.scale * vertical_exaggeration) * index as f32
     }
     pub fn offset(&self) -> f32 {
         self.offset

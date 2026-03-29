@@ -1,4 +1,6 @@
 mod layer;
+mod node;
+pub use node::Node;
 mod png;
 mod variable_index;
 mod voxel_layer;
@@ -27,7 +29,7 @@ v4 rayon per file?
 
 #[cfg(test)]
 mod tests {
-    use crate::png::{ColorRamp, to_buffer, to_gif, write_png_to_file};
+    use crate::png::{to_buffer, to_gif, write_png_to_file, ColorRamp};
     use crate::voxel_layer::VoxelLayer;
 
     #[test]
@@ -49,8 +51,6 @@ mod tests {
                 .iter()
                 .map(|v| v.clamp(*s, *e))
                 .map(|v| (v - *s) / (*e - *s))
-                // .map(|v| (v - min_value) / (dist_max_value - dist_min_value))
-                // .map(|v| (v - min_value) / (dist_max_value - dist_min_value))
                 .collect();
 
             let img_data = to_buffer(
