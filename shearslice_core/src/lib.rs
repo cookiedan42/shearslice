@@ -29,7 +29,7 @@ v4 rayon per file?
 
 #[cfg(test)]
 mod tests {
-    use crate::png::{to_buffer, to_gif, write_png_to_file, ColorRamp};
+    use crate::png::{ColorRamp, to_buffer, to_gif, write_png_to_file};
     use crate::voxel_layer::VoxelLayer;
 
     #[test]
