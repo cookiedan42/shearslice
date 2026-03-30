@@ -14,6 +14,7 @@ pub struct Layer {
     variables: Vec<Variable>,
     index: LayerIndex,
     style: Style,
+    capabilities: Option<Vec<String>>,
 }
 
 impl Layer {
