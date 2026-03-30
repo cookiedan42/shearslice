@@ -325,7 +325,7 @@ impl Dimension {
         }
         if let Some(sp) = &self.regular_spacing {
             return (0..self.size)
-                .map(|i| sp.offset + sp.scale * i as f32)
+                .map(|i| sp.offset + sp.scale() * i as f32)
                 .collect();
         }
         unreachable!("Should be in one of the two cases above");
@@ -421,18 +421,22 @@ impl IrregularSpacing {
 #[serde(deny_unknown_fields)]
 pub(crate) struct RegularSpacing {
     // space between values
-    scale: f32,
+    scale: Option<f32>,
     // offset of the first value
     offset: f32,
 }
 impl RegularSpacing {
+    pub fn default_one() -> f32 {
+        1.0
+    }
+
     pub fn scale(&self) -> f32 {
-        self.scale
+        self.scale.unwrap_or(1.0)
     }
     pub fn at(&self, index: usize, vertical_exaggeration: Option<f32>) -> f32 {
         let vertical_exaggeration = vertical_exaggeration.unwrap_or(1.0);
 
-        self.offset + (self.scale * vertical_exaggeration) * index as f32
+        self.offset + (self.scale() * vertical_exaggeration) * index as f32
     }
     pub fn offset(&self) -> f32 {
         self.offset
