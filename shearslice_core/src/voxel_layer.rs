@@ -77,8 +77,7 @@ impl VoxelLayer {
 
         x_vals
             .iter()
-            .map(|x| y_vals.iter().map(|y| (*x, *y)))
-            .flatten()
+            .flat_map(|x| y_vals.iter().map(|y| (*x, *y)))
             .collect()
     }
 }
@@ -113,7 +112,7 @@ impl VoxelLayer {
         let bin_data = self
             .bins
             .get(&(layer_id, node_x, node_y, node_z))
-            .expect(format!("Bin data not found for {node_x},{node_y},{node_z}").as_str());
+            .unwrap_or_else(|| panic!("Bin data not found for {node_x},{node_y},{node_z}"));
 
         bin_data.query(x, y, z)
     }
@@ -136,6 +135,7 @@ impl VoxelLayer {
         let z_len = self.layer().volumes()[0].dimensions()[2].size();
 
         let r = arr.iter().enumerate().map(|(i, v)| {
+            // x1 and y1 are lat lon so need to be flipped
             let x1 = i / x_len;
             let y1 = i % y_len;
             let z1 = (z + (*v as i32)).clamp(0, (z_len - 1) as i32) as usize;
@@ -152,6 +152,6 @@ mod tests {
 
     #[test]
     fn test_from_file() {
-        let layer = VoxelLayer::from_file("../data/data1");
+        let _layer = VoxelLayer::from_file("../data/30");
     }
 }

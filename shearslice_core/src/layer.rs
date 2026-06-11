@@ -34,7 +34,7 @@ impl Layer {
         self.variables.as_slice()
     }
 
-    pub(crate) fn volumes(&self) -> &[Volume] {
+    pub fn volumes(&self) -> &[Volume] {
         &self.volumes
     }
 
@@ -287,7 +287,7 @@ impl Extent {
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Volume {
+pub struct Volume {
     id: u32,
     dimensions: Vec<Dimension>,
 }
@@ -300,7 +300,7 @@ impl Volume {
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Dimension {
+pub struct Dimension {
     name: String,
     label: String,
     unit: String,
