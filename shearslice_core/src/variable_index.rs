@@ -33,9 +33,9 @@ mod tests {
 
     #[test]
     fn it_works() {
-        serde_json::from_str::<Index>(include_str!("../../data/data1/variables/0/index.json"))
+        serde_json::from_str::<Index>(include_str!("../../data/30/variables/0/index.json"))
             .unwrap();
 
-        let _layer = Index::from_file("../data/data1/variables/0/index.json");
+        let _layer = Index::from_file("../data/30/variables/0/index.json");
     }
 }

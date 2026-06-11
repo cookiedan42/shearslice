@@ -25,6 +25,9 @@ impl<T> Node<T>
 where
     T: FromBytes + Copy + bytemuck::Pod,
 {
+    /// bxyz are the number of bricks in each dimension of the node
+    /// vxyz are the number of voxels in each dimension of the brick
+    /// aw is the apron width, which is constant for all dimensions
     pub fn from_bin(
         data: &[u8],
         bx: usize,
@@ -47,7 +50,9 @@ where
             bricks: Brick::from_bin(&data[24..], vx, vy, vz, aw),
         }
     }
+    /// query a single voxel at (x,y,z) in the global coordinate space
     pub fn query(&self, x: usize, y: usize, z: usize) -> T {
+        // convert to local coordinate
         let x1 = x % (self.vx * self.bx);
         let y1 = y % (self.vy * self.by);
         let z1 = z % (self.vz * self.bz);
@@ -94,7 +99,9 @@ where
             .collect()
     }
 
+    /// query a single voxel at (x,y,z) in the global coordinate space
     pub fn query(&self, x: usize, y: usize, z: usize) -> T {
+        // convert to local coordinates
         let x = x % self.vx;
         let y = y % self.vy;
         let z = z % self.vz;

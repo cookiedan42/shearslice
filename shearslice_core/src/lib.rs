@@ -29,45 +29,43 @@ v4 rayon per file?
 
 #[cfg(test)]
 mod tests {
-    use crate::png::{ColorRamp, to_buffer, to_gif, write_png_to_file};
     use crate::voxel_layer::VoxelLayer;
+    use rstest::rstest;
 
-    #[test]
-    fn test_plane() {
-        let layer = VoxelLayer::from_file("../data/f773");
+    /// compare coordinate by coordinate reading of the slpk file against the netcdf file
+    #[rstest]
+    #[case("30")]
+    #[case("256")]
+    #[case("768")]
+    #[case("1024")]
+    fn test_coord(#[case] name: &str) {
+        let layer = VoxelLayer::from_file(&format!("../data/{name}"));
+        let netcdf_file = netcdf::open(&format!("../data/2D_Result_{name}.nc")).unwrap();
 
-        let mut buffers = Vec::new();
+        let windspeed_var = netcdf_file.variable("WindSpeed").unwrap();
+        // lon,lat,z,t
+        windspeed_var.get_value::<f32, _>([0, 0, 0, 0]).unwrap();
+        let dims = windspeed_var
+            .dimensions()
+            .into_iter()
+            .map(|dim| dim.len())
+            .collect::<Vec<_>>();
+        let t_size = dims[0];
+        let z_size = dims[1];
+        let x_size = dims[2];
+        let y_size = dims[3];
+        println!("t_size: {t_size}, x_size: {x_size}, y_size: {y_size}, z_size: {z_size}");
 
-        let [s, e] = layer.layer().styles().variable_styles()[0]
-            .transfer_function()
-            .stretch_range();
-
-        for z in 0..49 {
-            let res = layer.query_plane(z).unwrap();
-            assert!(res.len() == 1024 * 1024);
-
-            // normalise data
-            let res1: Vec<f32> = res
-                .iter()
-                .map(|v| v.clamp(*s, *e))
-                .map(|v| (v - *s) / (*e - *s))
-                .collect();
-
-            let img_data = to_buffer(
-                &res1,
-                layer.layer().styles().variable_styles()[0]
-                    .transfer_function()
-                    .color_stops(),
-            );
-
-            write_png_to_file(&img_data, format! {"../data/img/{}.png",z}).unwrap();
-
-            println!("Wrote png {z} to file");
-
-            buffers.push(img_data);
+        for t in 0..t_size {
+            for z in 0..z_size {
+                for y in 0..y_size {
+                    for x in 0..x_size {
+                        let windspeed_nc = windspeed_var.get_value::<f32, _>([t, z, y, x]).unwrap();
+                        let windspeed_slpk = layer.query(x, y, z, 0);
+                        assert_eq!(windspeed_nc, windspeed_slpk);
+                    }
+                }
+            }
         }
-
-        to_gif(buffers, "../data/img/all.gif");
-        println!("Wrote gif to file");
     }
 }

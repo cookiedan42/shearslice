@@ -15,6 +15,8 @@ pub struct Layer {
     index: LayerIndex,
     style: Style,
     capabilities: Option<Vec<String>>,
+    #[serde(rename = "popupInfo")]
+    popup_info: Option<serde_json::Value>,
 }
 
 impl Layer {
@@ -174,6 +176,7 @@ struct ColorStop {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct VolumeStyle {
     volume_id: u32,
+    #[serde(default)]
     vertical_exaggeration: f32,
 }
 impl VolumeStyle {
@@ -243,8 +246,9 @@ enum LayerType {
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
 struct SpatialReference {
-    wkid: u32,
-    latest_wkid: u32,
+    wkid: Option<u32>,
+    latest_wkid: Option<u32>,
+    wkt: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -447,11 +451,19 @@ impl RegularSpacing {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
-    #[test]
-    fn it_works() {
-        serde_json::from_str::<Layer>(include_str!("../../data/data1/layer.json")).unwrap();
+    #[rstest]
+    #[case("30")]
+    #[case("256")]
+    #[case("768")]
+    #[case("1024")]
+    fn it_works(#[case] name: &str) {
+        serde_json::from_str::<Layer>(
+            &std::fs::read_to_string(format!("../data/{name}/layer.json")).unwrap(),
+        )
+        .unwrap();
 
-        let _layer = Layer::from_file("../data/data1/layer.json");
+        let _layer = Layer::from_file(&format!("../data/{name}/layer.json"));
     }
 }
