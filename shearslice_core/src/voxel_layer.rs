@@ -1,68 +1,87 @@
 use crate::layer::Layer;
 use crate::node;
 use hashbrown::HashMap;
+use std::cell::RefCell;
 
 pub struct VoxelLayer {
     layer: Layer,
-    bins: HashMap<(usize, usize, usize, usize), node::Node<f32>>,
+    path: String,
+    bins: RefCell<HashMap<(usize, usize, usize, usize), node::Node<f32>>>,
+    // Cached values
+    brick_size: [usize; 3],
+    node_size: [usize; 3],
+    apron_width: usize,
 }
 
 /// Constructors
 impl VoxelLayer {
     #[cfg(feature = "std")]
     pub fn from_file(path: &str) -> Self {
-        use std::fs;
-
         let layer = Layer::from_file(&format! {"{path}/layer.json"});
 
         let node_size = layer.index().node_size();
         let brick_size = layer.index().brick_size();
         let apron_width = layer.index().apron_width();
 
-        let mut bins = HashMap::new();
-
-        // Get volume dimensions from layer
-        for var in layer.variables().into_iter() {
-            let var_id = var.id();
-            let paths = layer.tails(var_id);
-
-            for (file_x, file_y, file_z) in paths {
-                let bin_path = format!(
-                    "{}/variables/{}/0/bundles/0/{}-{}-{}.bin",
-                    path,
-                    var_id,
-                    file_x * node_size[0],
-                    file_y * node_size[1],
-                    file_z * node_size[2]
-                );
-                let contents = fs::read(bin_path).expect("Failed to read bin file");
-                bins.insert(
-                    (
-                        var_id,
-                        file_x * node_size[0],
-                        file_y * node_size[1],
-                        file_z * node_size[2],
-                    ),
-                    node::Node::from_bin(
-                        &contents,
-                        node_size[0],
-                        node_size[1],
-                        node_size[2],
-                        brick_size[0],
-                        brick_size[1],
-                        brick_size[2],
-                        apron_width,
-                    ),
-                );
-            }
+        Self {
+            layer,
+            path: path.to_string(),
+            bins: RefCell::new(HashMap::new()),
+            brick_size,
+            node_size,
+            apron_width,
         }
-
-        Self { layer, bins }
     }
 
     /// HashMap Keys are (layer_id, file_x, file_y, file_z)
+    /// initialize from a partially loaded layer
     pub fn new(layer: Layer, bins: HashMap<(usize, usize, usize, usize), node::Node<f32>>) -> Self {
-        Self { layer, bins }
+        let node_size = layer.index().node_size();
+        let brick_size = layer.index().brick_size();
+        let apron_width = layer.index().apron_width();
+
+        Self {
+            layer,
+            path: String::new(),
+            bins: RefCell::new(bins),
+            brick_size,
+            node_size,
+            apron_width,
+        }
+    }
+
+    /// Load a bin file lazily
+    #[cfg(feature = "std")]
+    fn load_bin(&self, layer_id: usize, node_x: usize, node_y: usize, node_z: usize) {
+        use std::fs;
+
+        let key = (layer_id, node_x, node_y, node_z);
+
+        // Already loaded
+        if self.bins.borrow().contains_key(&key) {
+            return;
+        }
+
+        let bin_path = format!(
+            "{}/variables/{}/0/bundles/0/{}-{}-{}.bin",
+            self.path, layer_id, node_x, node_y, node_z
+        );
+
+        let contents =
+            fs::read(&bin_path).unwrap_or_else(|_| panic!("Failed to read bin file: {bin_path}"));
+
+        let node = node::Node::from_bin(
+            &contents,
+            self.node_size[0],
+            self.node_size[1],
+            self.node_size[2],
+            self.brick_size[0],
+            self.brick_size[1],
+            self.brick_size[2],
+            self.apron_width,
+        );
+
+        self.bins.borrow_mut().insert(key, node);
     }
 }
 
@@ -71,6 +90,8 @@ impl VoxelLayer {
     pub fn layer(&self) -> &Layer {
         &self.layer
     }
+    /// get all the x,y coordinates of the data
+    /// used for elevation querying
     pub fn get_xy(&self) -> Vec<(f32, f32)> {
         let x_vals = self.layer().volumes()[0].dimensions()[0].values();
         let y_vals = self.layer().volumes()[0].dimensions()[1].values();
@@ -97,6 +118,7 @@ impl VoxelLayer {
     }
 
     // x,y,z are indices, find the brick they belong to and query the brick
+    #[inline]
     pub fn query(&self, x: usize, y: usize, z: usize, layer_id: usize) -> f32 {
         let brick_size = self.layer().index().brick_size();
         let node_size = self.layer().index().node_size();
@@ -109,8 +131,13 @@ impl VoxelLayer {
         let node_y = brick_y / node_size[1] * node_size[1]; // 0-28, spacing 4
         let node_z = brick_z / node_size[2] * node_size[2]; // 0
 
-        let bin_data = self
-            .bins
+        // Lazy load the bin file if needed
+        // assume no lazy loading if not using std
+        #[cfg(feature = "std")]
+        self.load_bin(layer_id, node_x, node_y, node_z);
+
+        let bins = self.bins.borrow();
+        let bin_data = bins
             .get(&(layer_id, node_x, node_y, node_z))
             .unwrap_or_else(|| panic!("Bin data not found for {node_x},{node_y},{node_z}"));
 

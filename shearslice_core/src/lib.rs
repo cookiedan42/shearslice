@@ -4,11 +4,11 @@ pub use node::Node;
 mod png;
 mod variable_index;
 mod voxel_layer;
+pub use voxel_layer::{BinLoader, FileLoader, MemoryLoader, VoxelLayer};
 
 pub use layer::Layer;
 pub use png::to_png;
 pub use variable_index::Index;
-pub use voxel_layer::VoxelLayer;
 
 /*
 

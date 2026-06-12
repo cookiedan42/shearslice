@@ -14,12 +14,14 @@ fn main() {
         let _ = layer.query_plane(z as i32);
     }
 
+    let mut a = vec![0_f32; 1024 * 1024 * 50];
     // Query individual points
     for z in 0..z_len {
         for y in 0..y_len {
             for x in 0..x_len {
-                let _ = layer.query(x, y, z, 0);
+                a[x + y * 1024 + z * 1024 * 1024] = layer.query(x, y, z, 0);
             }
         }
     }
+    println!("done: {:?}", a.iter().sum::<f32>());
 }

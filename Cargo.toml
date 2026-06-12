@@ -7,10 +7,14 @@ members = [
 ]
 
 
-# Enable debug symbols in release for profiling
-[profile.release]
-debug = true
-
 # Bench profile inherits from release, ensure debug symbols
 [profile.bench]
 debug = true
+
+# Run nextest tests with the release profile
+[profile.release-test]
+inherits = "release"
+debug = false
+debug-assertions = false
+overflow-checks = false
+lto = true

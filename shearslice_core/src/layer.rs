@@ -108,6 +108,7 @@ impl VariableStyle {
     }
 }
 
+/// Transfer function defines how color is applied to the voxel layer
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
