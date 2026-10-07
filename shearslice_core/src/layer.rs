@@ -346,51 +346,62 @@ impl Dimension {
     }
     fn find_regular(&self, value: f32, vertical_exaggeration: Option<f32>) -> usize {
         let spacing = self.regular_spacing().unwrap();
+        let last = self.size() - 1;
+
         if value <= spacing.offset() {
             return 0;
-        } else if value >= spacing.at(self.size() - 1, vertical_exaggeration) {
-            return self.size() - 1;
-        } else {
-            // TODO: convert to binary search
-            for i in 0..self.size() {
-                if value < spacing.at(i, vertical_exaggeration) {
-                    continue;
-                }
-                // compare current value to the next value
-                let low = spacing.at(i, vertical_exaggeration);
-                let high = spacing.at(i + 1, vertical_exaggeration);
-                if value - low < high - value {
-                    return i;
-                } else {
-                    return i + 1;
-                }
-            }
         }
-        unreachable!("Should be in one of the three cases above");
+        if value >= spacing.at(last, vertical_exaggeration) {
+            return last;
+        }
+
+        // Regular spacing: compute the bracketing indices directly instead of scanning.
+        let step = spacing.scale() * vertical_exaggeration.unwrap_or(1.0);
+        if step == 0.0 {
+            return 0;
+        }
+        let raw_index = (value - spacing.offset()) / step;
+        let low = (raw_index.floor().max(0.0) as usize).min(last);
+        let high = (low + 1).min(last);
+
+        let low_value = spacing.at(low, vertical_exaggeration);
+        let high_value = spacing.at(high, vertical_exaggeration);
+        if value - low_value < high_value - value {
+            low
+        } else {
+            high
+        }
     }
     fn find_irregular(&self, value: f32, _vertical_exaggeration: Option<f32>) -> usize {
         // TODO: implement vertical_exaggeration if/when needed
 
         let spacing = self.irregular_spacing().unwrap();
+        let last = spacing.len() - 1;
 
         if value <= spacing.at(0) {
             return 0;
-        } else if value >= spacing.at(spacing.len() - 1) {
-            return spacing.len() - 1;
+        }
+        if value >= spacing.at(last) {
+            return last;
         }
 
         match spacing
             .values()
-            .binary_search_by(|a| a.partial_cmp(&value).unwrap())
+            .binary_search_by(|a| a.partial_cmp(&value).unwrap_or(core::cmp::Ordering::Equal))
         {
             Ok(idx) => idx,
             Err(idx) => {
-                let low = spacing.at(idx);
-                let high = spacing.at(idx + 1);
-                if value - low < high - value {
-                    idx
+                // `idx` is the insertion point: values[idx - 1] < value < values[idx].
+                // Since value is strictly between the first and last elements (checked
+                // above), idx is guaranteed to be in 1..=last, so both indices are valid.
+                let low = idx - 1;
+                let high = idx;
+                let low_value = spacing.at(low);
+                let high_value = spacing.at(high);
+                if value - low_value < high_value - value {
+                    low
                 } else {
-                    idx + 1
+                    high
                 }
             }
         }
