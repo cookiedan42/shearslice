@@ -19,7 +19,7 @@ fn main() {
     for z in 0..z_len {
         for y in 0..y_len {
             for x in 0..x_len {
-                a[x + y * 1024 + z * 1024 * 1024] = layer.query(x, y, z, 0);
+                a[x + y * 1024 + z * 1024 * 1024] = layer.query(x, y, z, 0).unwrap_or(0.0);
             }
         }
     }

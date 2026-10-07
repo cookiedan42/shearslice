@@ -2,7 +2,11 @@
 
 A library for slicing a 3D data along various elevations.
 
-
+- Rust core + query engine: `shearslice_core/`
+- WASM/JavaScript bindings: `shearslice_wasm/` — see
+  **[shearslice_wasm/README.md](shearslice_wasm/README.md)** for the
+  JS/TypeScript-facing API docs (installing, `VoxelData`/`VoxelQuery`,
+  no-data handling, usage examples).
 
 ## Functionality
 

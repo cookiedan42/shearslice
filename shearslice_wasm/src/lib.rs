@@ -13,10 +13,6 @@ pub fn start() {
     console_error_panic_hook::set_once();
     wasm_logger::init(wasm_logger::Config::default());
 }
-#[wasm_bindgen]
-pub fn hello_world() -> String {
-    "Hello, world!".to_string()
-}
 
 // wasm bindgen to create the hashmap
 // feed into the voxel layer
@@ -142,6 +138,8 @@ impl VoxelData {
 impl VoxelData {
     /// Query the data at a given z index plane
     /// Clamps the value to the range of the z variable
+    /// No-data voxels are rendered as `f32::NAN`, which `apply_color_ramp`'s clamp turns
+    /// into the bottom of the color ramp.
     pub fn query_plane(&self, z: i32) -> js_sys::Uint8Array {
         let data = self.layer.query_plane(z).unwrap();
         let [s, e] = self.layer.layer().styles().variable_styles()[0]
@@ -151,6 +149,7 @@ impl VoxelData {
         // normalise data
         let res1: Vec<f32> = data
             .iter()
+            .map(|v| v.unwrap_or(f32::NAN))
             .map(|v| v.clamp(*s, *e))
             .map(|v| (v - *s) / (*e - *s))
             .collect();
@@ -168,6 +167,8 @@ impl VoxelData {
     /// Query the data at a given array of x,y,z indices
     /// arranged as a flattened array of 1024 * 1024 u16 values
     /// returns a png image
+    /// No-data voxels are rendered as `f32::NAN`, which `apply_color_ramp`'s clamp turns
+    /// into the bottom of the color ramp.
     pub fn query_arr16(&self, arr16: &[u16], z: i32) -> js_sys::Uint8Array {
         let data = self
             .layer
@@ -183,6 +184,7 @@ impl VoxelData {
         // normalise data
         let res1: Vec<f32> = data
             .iter()
+            .map(|v| v.unwrap_or(f32::NAN))
             .map(|v| v.clamp(*s, *e))
             .map(|v| (v - *s) / (*e - *s))
             .collect();
@@ -198,6 +200,8 @@ impl VoxelData {
 
     /// Query the data at a given array of x,y,z coordinates
     /// return a png image of the data
+    /// No-data voxels are rendered as `f32::NAN`, which `apply_color_ramp`'s clamp turns
+    /// into the bottom of the color ramp.
     pub fn query_arr_geometry(&self, arr: Vec<PointXyz>, layer_id: usize) -> js_sys::Uint8Array {
         let data = arr
             .iter()
@@ -210,6 +214,7 @@ impl VoxelData {
         // normalise data
         let res1: Vec<f32> = data
             .iter()
+            .map(|v| v.unwrap_or(f32::NAN))
             .map(|v| v.clamp(*s, *e))
             .map(|v| (v - *s) / (*e - *s))
             .collect();
@@ -224,8 +229,9 @@ impl VoxelData {
     }
 
     /// Query the data at a given x,y,z coordinate
-    /// Returns the raw, unclamped value of the variable at the nearest voxel
-    pub fn query_geometry(&self, x: f32, y: f32, z: f32, layer_id: usize) -> f32 {
+    /// Returns the raw, unclamped value of the variable at the nearest voxel, or
+    /// `undefined` if that voxel holds the variable's declared no-data value.
+    pub fn query_geometry(&self, x: f32, y: f32, z: f32, layer_id: usize) -> Option<f32> {
         self.layer.query_geometry(x, y, z, layer_id)
     }
 }
@@ -312,6 +318,9 @@ impl VoxelQuery {
     /// planned into the node `(node_x, node_y, node_z)` (i.e. one bundle's worth from
     /// `plan`). `bytes` is that bundle's fetched contents. The node is preloaded, queried,
     /// then evicted before returning, so it does not stay resident afterwards.
+    /// A point whose voxel holds the variable's declared no-data value is returned as
+    /// `f32::NAN` (test with `Number.isNaN` on the JS side), consistent with [`NO_DATA`]
+    /// marking an out-of-extent point in `plan`.
     pub fn query_bundle(
         &self,
         node_x: usize,
@@ -326,7 +335,11 @@ impl VoxelQuery {
             .preload_bin(self.layer_id, node_x, node_y, node_z, bytes);
 
         let values = (0..xs.len())
-            .map(|i| self.layer.query_geometry(xs[i], ys[i], zs[i], self.layer_id))
+            .map(|i| {
+                self.layer
+                    .query_geometry(xs[i], ys[i], zs[i], self.layer_id)
+                    .unwrap_or(f32::NAN)
+            })
             .collect();
 
         self.layer.evict_bin(self.layer_id, node_x, node_y, node_z);

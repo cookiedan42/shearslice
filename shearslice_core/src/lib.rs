@@ -4,9 +4,9 @@ pub use node::Node;
 mod png;
 mod variable_index;
 mod voxel_layer;
-pub use voxel_layer::{BinLoader, MemoryLoader, VoxelLayer};
 #[cfg(feature = "std")]
 pub use voxel_layer::FileLoader;
+pub use voxel_layer::{BinLoader, MemoryLoader, VoxelLayer};
 
 pub use layer::Layer;
 pub use png::to_png;
@@ -63,8 +63,9 @@ mod tests {
                 for y in 0..y_size {
                     for x in 0..x_size {
                         let windspeed_nc = windspeed_var.get_value::<f32, _>([t, z, y, x]).unwrap();
+                        // format1 datasets declare no no-data value, so every read is `Some`.
                         let windspeed_slpk = layer.query(x, y, z, 0);
-                        assert_eq!(windspeed_nc, windspeed_slpk);
+                        assert_eq!(Some(windspeed_nc), windspeed_slpk);
                     }
                 }
             }
@@ -97,11 +98,68 @@ mod tests {
                     let (x, y, z) = (x_vals[ix], y_vals[iy], z_vals[iz]);
 
                     let windspeed_nc = windspeed_var.get_value::<f32, _>([0, iz, iy, ix]).unwrap();
-                    let windspeed_slpk = layer.query_geometry(x, y, z, 0);
+                    // format1 datasets declare no no-data value, so every read is `Some`.
+                    let windspeed_slpk = layer.query_geometry(x, y, z, 0).unwrap();
                     assert_eq!(
                         windspeed_nc, windspeed_slpk,
                         "mismatch at ix={ix} iy={iy} iz={iz} (x={x} y={y} z={z})"
                     );
+                }
+            }
+        }
+    }
+
+    /// Same comparison as `test_coord`, but against the `format2` sample dataset, which
+    /// (unlike every format1 dataset) declares a no-data value and has a volume whose
+    /// dimensions aren't exact multiples of brickSize*nodeSize, so it exercises partial
+    /// edge nodes. Requires `data/format2` to have been exploded from `data/format2.slpk`
+    /// (see TODO.md / README for the extraction command) — `data/format2.slpk` is a ZIP
+    /// archive and this reader only reads already-unpacked, gunzipped files.
+    #[test]
+    fn test_coord_format2() {
+        let layer = VoxelLayer::from_file("../data/format2");
+        let netcdf_file = netcdf::open("../data/format2.nc").unwrap();
+
+        let windspeed_var = netcdf_file.variable("WindSpeed").unwrap();
+        // format2's variable order is [T, WindSpeed, Wind_x, Wind_y, Wind_z, p], so
+        // WindSpeed is layer/variable id 1, unlike format1 where it is id 0.
+        const WINDSPEED_ID: usize = 1;
+        const NO_DATA: f32 = -999.0;
+
+        // netcdf dims are [time, z, lat, lon]. Unlike every format1 dataset, format2's
+        // grid is NOT square (lat=172, lon=191), so (unlike `test_coord` above) the lat
+        // and lon axes cannot be swapped without going out of bounds -- each must be
+        // looped over its own size and passed to the right slot in each API.
+        let dims = windspeed_var
+            .dimensions()
+            .into_iter()
+            .map(|dim| dim.len())
+            .collect::<Vec<_>>();
+        let t_size = dims[0];
+        let z_size = dims[1];
+        let lat_size = dims[2];
+        let lon_size = dims[3];
+        println!("t_size: {t_size}, z_size: {z_size}, lat_size: {lat_size}, lon_size: {lon_size}");
+
+        for t in 0..t_size {
+            for z in 0..z_size {
+                for lat in 0..lat_size {
+                    for lon in 0..lon_size {
+                        let windspeed_nc =
+                            windspeed_var.get_value::<f32, _>([t, z, lat, lon]).unwrap();
+                        // SLPK dimension order is [lon, lat, z, time], so query's (x, y)
+                        // are (lon, lat).
+                        let windspeed_slpk = layer.query(lon, lat, z, WINDSPEED_ID);
+                        match windspeed_slpk {
+                            None => assert_eq!(
+                                windspeed_nc, NO_DATA,
+                                "slpk reported no-data but netcdf value at lon={lon} lat={lat} z={z} was {windspeed_nc}"
+                            ),
+                            Some(v) => {
+                                assert_eq!(windspeed_nc, v, "mismatch at lon={lon} lat={lat} z={z}")
+                            }
+                        }
+                    }
                 }
             }
         }

@@ -45,6 +45,14 @@ impl Layer {
         &self.style
     }
 
+    /// The declared no-data (fill) value for a variable, by variable id, if any.
+    pub fn no_data_for(&self, layer_id: usize) -> Option<f32> {
+        self.variables
+            .iter()
+            .find(|v| v.id() == layer_id)
+            .and_then(Variable::no_data)
+    }
+
     /// return the 3 indices of the node files for a given variable id
     pub fn tails(&self, _var_id: usize) -> Vec<(usize, usize, usize)> {
         let brick_size = self.index().brick_size();
@@ -54,9 +62,23 @@ impl Layer {
         let volumes = self.volumes();
         let dims = volumes[0].dimensions();
 
-        let files_x = dims[0].size() / brick_size[0] / node_size[0];
-        let files_y = dims[1].size() / brick_size[1] / node_size[1];
-        let files_z = dims[2].size() / brick_size[2] / node_size[2];
+        // Number of node files along each axis. Both divisions must round up: a volume
+        // whose size isn't an exact multiple of brickSize*nodeSize still has a final,
+        // partial node file that needs to be listed (e.g. format2's 191-wide x axis with
+        // brickSize=32/nodeSize=4 has ceil(191/32)=6 bricks -> ceil(6/4)=2 node files, not
+        // the 1 that truncating division would give).
+        let files_x = dims[0]
+            .size()
+            .div_ceil(brick_size[0])
+            .div_ceil(node_size[0]);
+        let files_y = dims[1]
+            .size()
+            .div_ceil(brick_size[1])
+            .div_ceil(node_size[1]);
+        let files_z = dims[2]
+            .size()
+            .div_ceil(brick_size[2])
+            .div_ceil(node_size[2]);
 
         let mut paths = Vec::new();
 
@@ -215,7 +237,8 @@ pub(crate) struct Variable {
     id: usize,
     name: String,
     description: String,
-    unit: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    unit: Option<String>,
     original_format: Format,
     rendering_format: Format,
 }
@@ -227,14 +250,28 @@ impl Variable {
     pub fn name(&self) -> &str {
         &self.name
     }
+    pub fn no_data(&self) -> Option<f32> {
+        self.original_format.no_data()
+    }
 }
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 struct Format {
     #[serde(rename = "type")]
     type_: String,
     continuity: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    no_data: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    has_no_data: Option<bool>,
+}
+
+impl Format {
+    pub fn no_data(&self) -> Option<f32> {
+        self.no_data
+    }
 }
 
 #[derive(Serialize, Deserialize)]

@@ -90,6 +90,41 @@ impl<L: BinLoader> VoxelLayer<L> {
         }
     }
 
+    /// The number of bricks actually stored in the node whose origin (in brick-index
+    /// units) is `(node_x, node_y, node_z)`, in each dimension.
+    ///
+    /// This is normally the configured `node_size`, but a node on the far edge of the
+    /// volume stores fewer bricks when the volume's brick grid doesn't divide evenly by
+    /// `node_size` (e.g. format2's 191-wide x axis has ceil(191/32)=6 bricks, so the node
+    /// at brick-offset 4 only stores 2 bricks in x, not a full 4).
+    fn node_brick_extents(&self, node_x: usize, node_y: usize, node_z: usize) -> [usize; 3] {
+        let dims = self.layer.volumes()[0].dimensions();
+        let extent = |node_origin: usize, brick_size: usize, node_size: usize, dim_size: usize| {
+            let total_bricks = dim_size.div_ceil(brick_size);
+            total_bricks.saturating_sub(node_origin).min(node_size)
+        };
+        [
+            extent(
+                node_x,
+                self.brick_size[0],
+                self.node_size[0],
+                dims[0].size(),
+            ),
+            extent(
+                node_y,
+                self.brick_size[1],
+                self.node_size[1],
+                dims[1].size(),
+            ),
+            extent(
+                node_z,
+                self.brick_size[2],
+                self.node_size[2],
+                dims[2].size(),
+            ),
+        ]
+    }
+
     /// Load a specific bin on demand
     fn load_bin(&self, layer_id: usize, node_x: usize, node_y: usize, node_z: usize) {
         let key = (layer_id, node_x, node_y, node_z);
@@ -108,15 +143,19 @@ impl<L: BinLoader> VoxelLayer<L> {
             .load(&bin_path)
             .unwrap_or_else(|e| panic!("{}", e));
 
+        let [bx, by, bz] = self.node_brick_extents(node_x, node_y, node_z);
         let node = node::Node::from_bin(
             &contents,
-            self.node_size[0],
-            self.node_size[1],
-            self.node_size[2],
+            bx,
+            by,
+            bz,
             self.brick_size[0],
             self.brick_size[1],
             self.brick_size[2],
             self.apron_width,
+            node_x * self.brick_size[0],
+            node_y * self.brick_size[1],
+            node_z * self.brick_size[2],
         );
 
         self.bins.borrow_mut().insert(key, node);
@@ -133,15 +172,19 @@ impl<L: BinLoader> VoxelLayer<L> {
     ) {
         let key = (layer_id, node_x, node_y, node_z);
 
+        let [bx, by, bz] = self.node_brick_extents(node_x, node_y, node_z);
         let node = node::Node::from_bin(
             &data,
-            self.node_size[0],
-            self.node_size[1],
-            self.node_size[2],
+            bx,
+            by,
+            bz,
             self.brick_size[0],
             self.brick_size[1],
             self.brick_size[2],
             self.apron_width,
+            node_x * self.brick_size[0],
+            node_y * self.brick_size[1],
+            node_z * self.brick_size[2],
         );
 
         self.bins.borrow_mut().insert(key, node);
@@ -313,13 +356,15 @@ impl<L: BinLoader> VoxelLayer<L> {
         self.bins.borrow_mut().clear();
     }
 
-    pub fn query_geometry(&self, x: f32, y: f32, z: f32, layer_id: usize) -> f32 {
+    /// Returns `None` if the queried voxel holds the variable's declared no-data value.
+    pub fn query_geometry(&self, x: f32, y: f32, z: f32, layer_id: usize) -> Option<f32> {
         let (x_index, y_index, z_index) = self.indices_for_geometry(x, y, z);
         self.query(x_index, y_index, z_index, layer_id)
     }
 
+    /// Returns `None` if the queried voxel holds the variable's declared no-data value.
     #[inline]
-    pub fn query(&self, x: usize, y: usize, z: usize, layer_id: usize) -> f32 {
+    pub fn query(&self, x: usize, y: usize, z: usize, layer_id: usize) -> Option<f32> {
         let (node_x, node_y, node_z) = self.node_key_for_indices(x, y, z);
 
         // Lazy load the bin if needed
@@ -330,11 +375,16 @@ impl<L: BinLoader> VoxelLayer<L> {
             .get(&(layer_id, node_x, node_y, node_z))
             .unwrap_or_else(|| panic!("Bin data not found for {node_x},{node_y},{node_z}"));
 
-        bin_data.query(x, y, z)
+        let raw = bin_data.query(x, y, z);
+        match self.layer.no_data_for(layer_id) {
+            Some(no_data) if raw == no_data => None,
+            _ => Some(raw),
+        }
     }
 
-    // z is the index of the plane, find all the values in that plane
-    pub fn query_plane(&self, z: i32) -> Result<Vec<f32>, String> {
+    // z is the index of the plane, find all the values in that plane. `None` entries are
+    // voxels holding the variable's declared no-data value.
+    pub fn query_plane(&self, z: i32) -> Result<Vec<Option<f32>>, String> {
         let x_len = self.layer().volumes()[0].dimensions()[0].size();
         let y_len = self.layer().volumes()[0].dimensions()[1].size();
         let z_len = self.layer().volumes()[0].dimensions()[2].size();
@@ -345,7 +395,8 @@ impl<L: BinLoader> VoxelLayer<L> {
             .collect())
     }
 
-    pub fn query_arr(&self, arr: &[usize], z: i32) -> Result<Vec<f32>, String> {
+    /// `None` entries are voxels holding the variable's declared no-data value.
+    pub fn query_arr(&self, arr: &[usize], z: i32) -> Result<Vec<Option<f32>>, String> {
         let x_len = self.layer().volumes()[0].dimensions()[0].size();
         let y_len = self.layer().volumes()[0].dimensions()[1].size();
         let z_len = self.layer().volumes()[0].dimensions()[2].size();
