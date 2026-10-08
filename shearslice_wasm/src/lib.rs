@@ -230,9 +230,12 @@ impl VoxelData {
 
     /// Query the data at a given x,y,z coordinate
     /// Returns the raw, unclamped value of the variable at the nearest voxel, or
-    /// `undefined` if that voxel holds the variable's declared no-data value.
-    pub fn query_geometry(&self, x: f32, y: f32, z: f32, layer_id: usize) -> Option<f32> {
-        self.layer.query_geometry(x, y, z, layer_id)
+    /// `NaN` (test with `Number.isNaN` on the JS side) if the coordinate is out of
+    /// bounds or that voxel holds the variable's declared no-data value.
+    pub fn query_geometry(&self, x: f32, y: f32, z: f32, layer_id: usize) -> f32 {
+        self.layer
+            .query_geometry(x, y, z, layer_id)
+            .unwrap_or(f32::NAN)
     }
 }
 

@@ -356,15 +356,27 @@ impl<L: BinLoader> VoxelLayer<L> {
         self.bins.borrow_mut().clear();
     }
 
-    /// Returns `None` if the queried voxel holds the variable's declared no-data value.
+    /// Returns `None` if `(x, y, z)` falls outside the layer's extent, or if the queried
+    /// voxel holds the variable's declared no-data value.
+    /// takes world coordinates in same units as layer
     pub fn query_geometry(&self, x: f32, y: f32, z: f32, layer_id: usize) -> Option<f32> {
+        if !self.in_extent(x, y, z) {
+            return None;
+        }
         let (x_index, y_index, z_index) = self.indices_for_geometry(x, y, z);
         self.query(x_index, y_index, z_index, layer_id)
     }
 
-    /// Returns `None` if the queried voxel holds the variable's declared no-data value.
+    /// Returns `None` if `(x, y, z)` falls outside the grid's dimensions, or if the queried
+    /// voxel holds the variable's declared no-data value.
+    /// takes index of the grid cell in the layer's grid
     #[inline]
     pub fn query(&self, x: usize, y: usize, z: usize, layer_id: usize) -> Option<f32> {
+        let dims = self.layer().volumes()[0].dimensions();
+        if x >= dims[0].size() || y >= dims[1].size() || z >= dims[2].size() {
+            return None;
+        }
+
         let (node_x, node_y, node_z) = self.node_key_for_indices(x, y, z);
 
         // Lazy load the bin if needed
@@ -508,5 +520,42 @@ mod tests {
         assert!(!layer.in_extent((extent.xmax() + 1000.0) as f32, mid_y, mid_z));
         assert!(!layer.in_extent(mid_x, mid_y, (extent.zmin() - 1000.0) as f32));
         assert!(!layer.in_extent(f32::NAN, mid_y, mid_z));
+    }
+
+    #[test]
+    #[allow(clippy::cast_possible_truncation)] // test-only: values are well within f32 range
+    fn test_query_geometry_out_of_bounds_returns_none() {
+        let layer = VoxelLayer::from_file("../data/256");
+        let dims = layer.layer().volumes()[0].dimensions();
+        let (x, y, z) = (
+            dims[0].values()[0],
+            dims[1].values()[0],
+            dims[2].values()[0],
+        );
+
+        // sanity: an in-bounds point returns Some
+        assert!(layer.query_geometry(x, y, z, 0).is_some());
+
+        let extent = layer.layer().extent();
+        assert_eq!(
+            layer.query_geometry((extent.xmax() + 1000.0) as f32, y, z, 0),
+            None
+        );
+        assert_eq!(layer.query_geometry(f32::NAN, y, z, 0), None);
+    }
+
+    #[test]
+    fn test_query_index_out_of_bounds_returns_none_without_panic() {
+        let layer = VoxelLayer::from_file("../data/256");
+        let dims = layer.layer().volumes()[0].dimensions();
+        let (x_len, y_len, z_len) = (dims[0].size(), dims[1].size(), dims[2].size());
+
+        // sanity: the last valid index still returns Some
+        assert!(layer.query(x_len - 1, y_len - 1, z_len - 1, 0).is_some());
+
+        // one past the end on each axis individually must not panic and must return None
+        assert_eq!(layer.query(x_len, 0, 0, 0), None);
+        assert_eq!(layer.query(0, y_len, 0, 0), None);
+        assert_eq!(layer.query(0, 0, z_len, 0), None);
     }
 }
