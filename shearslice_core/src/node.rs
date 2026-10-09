@@ -63,7 +63,7 @@ where
             ox,
             oy,
             oz,
-            bricks: Brick::from_bin(&data[24..], vx, vy, vz, aw),
+            bricks: Brick::from_bin(&data[24..], vx, vy, vz, aw), // panicked on empty slice in prd?
         }
     }
     /// query a single voxel at (x,y,z) in the global coordinate space

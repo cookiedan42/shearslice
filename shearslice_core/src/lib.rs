@@ -1,12 +1,14 @@
 mod layer;
 mod node;
 pub use node::Node;
+mod loaders;
 mod png;
 mod variable_index;
 mod voxel_layer;
 #[cfg(feature = "std")]
-pub use voxel_layer::FileLoader;
-pub use voxel_layer::{BinLoader, MemoryLoader, VoxelLayer};
+pub use loaders::FileLoader;
+pub use loaders::{BinLoader, MemoryLoader};
+pub use voxel_layer::VoxelLayer;
 
 pub use layer::Layer;
 pub use png::to_png;
