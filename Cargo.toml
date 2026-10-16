@@ -2,5 +2,19 @@
 resolver = "3"
 
 members = [
-    "shearslice_core",
+    "shearslice_core", 
+    "shearslice_wasm",
 ]
+
+
+# Bench profile inherits from release, ensure debug symbols
+[profile.bench]
+debug = true
+
+# Run nextest tests with the release profile
+[profile.release-test]
+inherits = "release"
+debug = false
+debug-assertions = false
+overflow-checks = false
+lto = true
