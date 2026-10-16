@@ -56,6 +56,13 @@ impl VoxelData {
 
         Self { layer, layer_id }
     }
+
+    /// The (x_len, y_len) shape of the volume's horizontal plane, as declared in the
+    /// layer's metadata. Used to size rendered PNG slices instead of a fixed resolution.
+    fn plane_dims(&self) -> (u32, u32) {
+        let dims = self.layer.layer().volumes()[0].dimensions();
+        (dims[0].size() as u32, dims[1].size() as u32)
+    }
 }
 
 #[wasm_bindgen]
@@ -66,6 +73,7 @@ impl VoxelData {
     /// into the bottom of the color ramp.
     pub fn query_plane(&self, z: i32) -> js_sys::Uint8Array {
         let data = self.layer.query_plane(z).unwrap();
+        let (x_len, y_len) = self.plane_dims();
         let [s, e] = self.layer.layer().styles().variable_styles()[0]
             .transfer_function()
             .stretch_range();
@@ -83,13 +91,15 @@ impl VoxelData {
             self.layer.layer().styles().variable_styles()[0]
                 .transfer_function()
                 .color_stops(),
+            y_len,
+            x_len,
         );
 
         js_sys::Uint8Array::from(&img_data[..])
     }
 
     /// Query the data at a given array of x,y,z indices
-    /// arranged as a flattened array of 1024 * 1024 u16 values
+    /// arranged as a flattened array of the volume's x,y plane shape
     /// returns a png image
     /// No-data voxels are rendered as `f32::NAN`, which `apply_color_ramp`'s clamp turns
     /// into the bottom of the color ramp.
@@ -101,6 +111,7 @@ impl VoxelData {
                 z,
             )
             .unwrap();
+        let (x_len, y_len) = self.plane_dims();
         let [s, e] = self.layer.layer().styles().variable_styles()[0]
             .transfer_function()
             .stretch_range();
@@ -118,6 +129,8 @@ impl VoxelData {
             self.layer.layer().styles().variable_styles()[0]
                 .transfer_function()
                 .color_stops(),
+            y_len,
+            x_len,
         );
         js_sys::Uint8Array::from(&img_data[..])
     }
@@ -131,6 +144,7 @@ impl VoxelData {
             .iter()
             .map(|v| self.layer.query_geometry(v.x, v.y, v.z, layer_id))
             .collect::<Vec<_>>();
+        let (x_len, y_len) = self.plane_dims();
         let [s, e] = self.layer.layer().styles().variable_styles()[0]
             .transfer_function()
             .stretch_range();
@@ -148,6 +162,8 @@ impl VoxelData {
             self.layer.layer().styles().variable_styles()[0]
                 .transfer_function()
                 .color_stops(),
+            y_len,
+            x_len,
         );
         js_sys::Uint8Array::from(&img_data[..])
     }

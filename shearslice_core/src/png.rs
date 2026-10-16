@@ -1,3 +1,5 @@
+//! Encode a vector of f32 values as a png image
+
 use core::f32;
 
 #[cfg(feature = "std")]
@@ -42,19 +44,23 @@ fn apply_color_ramp(value: f32, ramp: &ColorRamp) -> (u8, u8, u8) {
     (r as u8, g as u8, b as u8)
 }
 
+/// `width` is the fast (inner) axis of `data`'s flat ordering and `height` is the slow
+/// (outer) axis, i.e. `data[i]` is at `(x = i % width, y = i / width)`.
 pub fn to_buffer(
     data: &[f32],
     color_ramp: &crate::layer::ColorRamp,
+    width: u32,
+    height: u32,
 ) -> ImageBuffer<Rgb<u8>, Vec<u8>> {
-    let mut img = ImageBuffer::new(1024, 1024);
+    let mut img = ImageBuffer::new(width, height);
 
     // scale the data to the range [0.0, 1.0]
 
     let data = data.iter().map(|v| color_ramp.eval(*v));
 
     for (i, [r, g, b, _]) in data.enumerate() {
-        let x = (i % 1024 as usize) as u32;
-        let y = (i / 1024 as usize) as u32;
+        let x = (i % width as usize) as u32;
+        let y = (i / width as usize) as u32;
         img.put_pixel(x, y, Rgb([r, g, b]));
     }
 
@@ -63,16 +69,27 @@ pub fn to_buffer(
     d.to_rgb8()
 }
 
-pub fn to_png(data: &[f32], color_ramp: &crate::layer::ColorRamp) -> Vec<u8> {
-    let buffer = to_buffer(data, color_ramp);
+pub fn to_png(
+    data: &[f32],
+    color_ramp: &crate::layer::ColorRamp,
+    width: u32,
+    height: u32,
+) -> Vec<u8> {
+    let buffer = to_buffer(data, color_ramp, width, height);
     let mut png_bytes = Vec::new();
     let encoder = PngEncoder::new(&mut png_bytes);
     encoder
-        .write_image(buffer.as_raw(), 1024, 1024, ExtendedColorType::Rgb8)
+        .write_image(
+            buffer.as_raw(),
+            buffer.width(),
+            buffer.height(),
+            ExtendedColorType::Rgb8,
+        )
         .unwrap();
     png_bytes
 }
 
+/// Encode a vector of png images as a gif, shifting up through the frames
 #[cfg(feature = "std")]
 pub fn to_gif<P: AsRef<Path>>(
     buffers: Vec<ImageBuffer<Rgb<u8>, Vec<u8>>>,
@@ -96,6 +113,7 @@ pub fn to_gif<P: AsRef<Path>>(
     // write out
 }
 
+/// Add alpha channel with full opacity to an RgbImage
 fn rgb_to_rgba(rgb_img: RgbImage) -> RgbaImage {
     ImageBuffer::from_fn(rgb_img.width(), rgb_img.height(), |x, y| {
         let rgb = rgb_img.get_pixel(x, y);
@@ -111,10 +129,41 @@ pub fn write_png_to_file<P: AsRef<Path>>(
     let mut png_bytes = Vec::new();
     let encoder = PngEncoder::new(&mut png_bytes);
     encoder
-        .write_image(data.as_raw(), 1024, 1024, ExtendedColorType::Rgb8)
+        .write_image(
+            data.as_raw(),
+            data.width(),
+            data.height(),
+            ExtendedColorType::Rgb8,
+        )
         .unwrap();
 
     let mut file = File::create(path)?;
     file.write_all(&png_bytes)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod png_tests {
+    use super::*;
+    use crate::layer::ColorRamp as LayerColorRamp;
+
+    #[test]
+    fn to_png_output_matches_requested_non_square_dims() {
+        // 3 wide (x_len) x 5 tall (y_len) plane, i.e. flat data at stride y_len=5.
+        let x_len = 3usize;
+        let y_len = 5usize;
+        let data: Vec<f32> = (0..x_len * y_len)
+            .map(|i| i as f32 / (x_len * y_len) as f32)
+            .collect();
+        let ramp: LayerColorRamp = serde_json::from_str(
+            r#"[{"color":[0,0,0,255],"position":0.0},{"color":[255,255,255,255],"position":1.0}]"#,
+        )
+        .unwrap();
+        let png_bytes = to_png(&data, &ramp, y_len as u32, x_len as u32);
+
+        let img = image::load_from_memory(&png_bytes).unwrap();
+        // rotate270 swaps width/height relative to the pre-rotation buffer
+        assert_eq!(img.width(), x_len as u32);
+        assert_eq!(img.height(), y_len as u32);
+    }
 }

@@ -1,3 +1,5 @@
+//! A logical grouping of bricks in a voxel layer, encoded as a single file
+
 use num_traits::FromBytes;
 
 /// A logical grouping of bricks

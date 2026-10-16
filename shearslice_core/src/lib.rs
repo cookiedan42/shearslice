@@ -5,14 +5,13 @@ mod loaders;
 mod png;
 mod variable_index;
 mod voxel_layer;
+pub use layer::Layer;
 #[cfg(feature = "std")]
 pub use loaders::FileLoader;
 pub use loaders::{BinLoader, MemoryLoader};
-pub use voxel_layer::VoxelLayer;
-
-pub use layer::Layer;
 pub use png::to_png;
 pub use variable_index::Index;
+pub use voxel_layer::VoxelLayer;
 
 /*
 
@@ -27,7 +26,7 @@ v4 rayon per file?
 
 */
 
-// for each horizontal cross section, create a 1024 by 1024 png
+// for each horizontal cross section, create a png sized to the volume's x,y grid
 // encode the values using the provided colormap in slpk
 // write the png to a file based on z value
 

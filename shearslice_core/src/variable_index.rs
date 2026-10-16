@@ -1,3 +1,5 @@
+//! Representation of the `index.json` file
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]

@@ -120,11 +120,8 @@ preloaded are keyed by your `layerId`, but these two methods look up variable
 take an explicit `layerId`) for any variable other than `0`, or use
 `VoxelQuery` below.
 
-**⚠️ PNG output is a fixed 1024×1024 image**, independent of the volume's
-actual grid size. For a volume smaller than 1024×1024 total x·y cells, only
-the top-left portion of the image is populated by real data; the remainder is
-left black. Scale/crop the result to the volume's real dimensions
-(`get_corners()`/the layer's dimension sizes) before displaying it.
+PNG output is sized to the volume's actual x,y grid dimensions (from the
+layer's metadata), not a fixed resolution.
 
 ### `VoxelQuery` — memory-lean, per-point batch queries
 
@@ -274,6 +271,5 @@ init pattern.
 - No time-dimension support — always reads as if `t = 0`.
 - `query_plane`/`query_arr16` only read variable id `0` regardless of the
   `layerId` the `VoxelData` was constructed with (see above).
-- PNG output is always 1024×1024 regardless of the actual grid size.
 - Variables/dimensions are selected by numeric id/index; no select-by-name
   helper is provided (see [Picking the right `layer_id`](#picking-the-right-layer_id)).
