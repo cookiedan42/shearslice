@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 mod style;
 pub(crate) use style::*;
 
+/// Representation of top level `layer.json`
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
