@@ -4,6 +4,7 @@ resolver = "3"
 members = [
     "shearslice_core", 
     "shearslice_wasm",
+    "ncvoxel_wasm",
 ]
 
 
