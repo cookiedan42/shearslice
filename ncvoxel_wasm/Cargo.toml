@@ -1,0 +1,48 @@
+[package]
+name = "ncvoxel_wasm"
+version = "0.1.0"
+edition = "2024"
+description = "Convert NetCDF files into I3S voxel layers (eslpk file maps / .slpk archives), in the browser via wasm"
+
+[lib]
+name = "ncvoxel_wasm"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Pure-Rust NetCDF-3 + NetCDF-4 (HDF5) reader. `rayon` is left off: wasm has no threads.
+netcdf-reader = { version = "0.9.3", default-features = false, features = ["netcdf4"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+flate2 = "1"
+md-5 = "0.10"
+
+# Wasm dependencies
+console_error_panic_hook = "0.1"
+wasm-bindgen = "0.2.100"
+js-sys = "0.3.90"
+serde-wasm-bindgen = "0.6"
+
+[dev-dependencies]
+rstest = "0.25.0"
+shearslice_core = { path = "../shearslice_core" }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+enum_glob_use = "deny"
+unwrap_used = "deny"
+# Style groups warn rather than deny (unlike shearslice_wasm): this crate is dense with
+# usize/u32/f64 conversions and `Result`-returning helpers where these lints are pure noise.
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+cast_possible_truncation = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+float_cmp = "allow"            # exact comparison is intentional (bit-exact fill / uniform-step checks)
+missing_errors_doc = "allow"
+must_use_candidate = "allow"
+
+# wasm-pack specific settings
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-Os", "--enable-bulk-memory"]

@@ -1,6 +1,10 @@
 ###############################################################################
 wasm:
 	wasm-pack build shearslice_wasm --out-dir ../pkg/ --release --scope dpl
+
+wasm-nc:
+	wasm-pack build ncvoxel_wasm --out-dir ../pkg-nc/ --release --scope dplplugin
+
 ###############################################################################
 # Browser tests. wasm-pack's own driver launch fails on some machines, so start
 # chromedriver ourselves and point the runner at it (CHROMEDRIVER_REMOTE).
@@ -19,4 +23,5 @@ wasm-test:
 	env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
 	  CHROMEDRIVER_REMOTE=http://localhost:$(PORT) \
 	  wasm-pack test --headless --chrome shearslice_wasm
+	wasm-pack build shearslice_wasm --out-dir ../pkg/ --release --scope dplplugin 
 ###############################################################################
