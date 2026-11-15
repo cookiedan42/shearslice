@@ -11,7 +11,8 @@ use hashbrown::HashMap;
 pub struct VoxelLayer<L: BinLoader> {
     layer: Layer,
     loader: L,
-    bins: RefCell<HashMap<(usize, usize, usize, usize), node::Node<f32>>>,
+    bins: RefCell<HashMap<(usize, usize, usize, usize), Vec<u8>>>,
+    nodes: RefCell<HashMap<(usize, usize, usize, usize), node::Node<f32>>>,
     pub brick_size: [usize; 3],
     pub node_size: [usize; 3],
     pub apron_width: usize,
@@ -29,6 +30,7 @@ impl<L: BinLoader> VoxelLayer<L> {
             layer,
             loader,
             bins: RefCell::new(HashMap::new()),
+            nodes: RefCell::new(HashMap::new()),
             brick_size,
             node_size,
             apron_width,
@@ -62,7 +64,8 @@ impl<L: BinLoader> VoxelLayer<L> {
             self.apron_width,
         );
 
-        self.bins.borrow_mut().insert(key, node);
+        self.bins.borrow_mut().insert(key, contents);
+        self.nodes.borrow_mut().insert(key, node);
     }
 
     /// Preload a specific bin
@@ -84,8 +87,8 @@ impl<L: BinLoader> VoxelLayer<L> {
             self.brick_size[2],
             self.apron_width,
         );
-
-        self.bins.borrow_mut().insert(key, node);
+        self.bins.borrow_mut().insert(key, data);
+        self.nodes.borrow_mut().insert(key, node);
     }
 
     /// Check if a bin is loaded
@@ -285,7 +288,13 @@ impl<L: BinLoader> VoxelLayer<L> {
             .get(&(layer_id, node_x, node_y, node_z))
             .unwrap_or_else(|| panic!("Bin data not found for {node_x},{node_y},{node_z}"));
 
-        let raw = bin_data.query(x, y, z);
+        let raw = self
+            .nodes
+            .borrow()
+            .get(&(layer_id, node_x, node_y, node_z))
+            .unwrap_or_else(|| panic!("Bin data not found for {node_x},{node_y},{node_z}"))
+            .query(x, y, z, bin_data);
+
         match self.layer.no_data_for(layer_id) {
             Some(no_data) if raw == no_data => None,
             _ => Some(raw),

@@ -1,7 +1,6 @@
 //! A logical grouping of bricks in a voxel layer, encoded as a single file
 
 use super::brick::Brick;
-use num_traits::FromBytes;
 
 /// size in bytes of the header at the start of every node bin
 const HEADER_SIZE: usize = 24;
@@ -43,7 +42,7 @@ fn stored_extents(mask: u64, node_size: [usize; 3]) -> [usize; 3] {
 /// T is the datatype of the voxel
 pub struct Node<T>
 where
-    T: FromBytes + Copy + bytemuck::Pod,
+    T: bytemuck::Pod,
 {
     // number of bricks actually stored in this node in each dimension (may be less than
     // the configured node_size for a node on the far edge of the volume, whose brick grid
@@ -59,15 +58,13 @@ where
     ox: usize,
     oy: usize,
     oz: usize,
-    // the raw data of the node
-    data: Vec<u8>,
     // brick data
     bricks: Vec<Brick<T>>,
 }
 
 impl<T> Node<T>
 where
-    T: FromBytes + Copy + bytemuck::Pod,
+    T: bytemuck::Pod,
 {
     /// `node_size` is the configured number of bricks per node in each dimension; it is
     /// needed to decode the brick mask in the header. The number of bricks actually
@@ -134,13 +131,12 @@ where
             ox,
             oy,
             oz,
-            data: data.to_vec(),
             bricks: bricks.collect(),
         }
     }
 
     /// query a single voxel at (x,y,z) in the global coordinate space
-    pub fn query(&self, x: usize, y: usize, z: usize) -> T {
+    pub fn query(&self, x: usize, y: usize, z: usize, data: &[u8]) -> T {
         // convert to node-local coordinates by subtracting this node's origin.
         let x1 = x - self.ox;
         let y1 = y - self.oy;
@@ -155,6 +151,6 @@ where
         let brick_index = brick_z * self.by * self.bx + brick_y * self.bx + brick_x;
 
         // then query the brick
-        self.bricks[brick_index].query(x, y, z, &self.data)
+        self.bricks[brick_index].query(x, y, z, data)
     }
 }
