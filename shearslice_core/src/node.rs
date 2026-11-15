@@ -1,5 +1,6 @@
 //! A logical grouping of bricks in a voxel layer, encoded as a single file
 
+use super::brick::Brick;
 use num_traits::FromBytes;
 
 /// size in bytes of the header at the start of every node bin
@@ -58,6 +59,8 @@ where
     ox: usize,
     oy: usize,
     oz: usize,
+    // the raw data of the node
+    data: Vec<u8>,
     // brick data
     bricks: Vec<Brick<T>>,
 }
@@ -100,17 +103,26 @@ where
             data.len()
         );
 
-        let header_u32 = |i: usize| {
-            let b = &data[i * 4..i * 4 + 4];
-            u32::from_le_bytes([b[0], b[1], b[2], b[3]])
-        };
-        let (ox, oy, oz) = (
-            header_u32(0) as usize * vx,
-            header_u32(1) as usize * vy,
-            header_u32(2) as usize * vz,
-        );
-        let mask = u64::from(header_u32(4)) | (u64::from(header_u32(5)) << 32);
+        // Brick offset derived from Node
+        let bx = u32::from_le_bytes(data[0..4].try_into().unwrap());
+
+        let by = u32::from_le_bytes(data[4..8].try_into().unwrap());
+        let bz = u32::from_le_bytes(data[8..12].try_into().unwrap());
+
+        // Voxel offset by multiplying
+        let ox = bx as usize * vx;
+        let oy = by as usize * vy;
+        let oz = bz as usize * vz;
+
+        let brick_size = u32::from_le_bytes(data[12..16].try_into().unwrap()) as usize;
+
+        let mask = u64::from_le_bytes(data[16..24].try_into().unwrap());
+
         let [bx, by, bz] = stored_extents(mask, node_size);
+
+        let bricks = (HEADER_SIZE..data.len())
+            .step_by(brick_size)
+            .map(|i| Brick::new(vx, vy, vz, aw, i, i + brick_size));
 
         Self {
             bx,
@@ -122,16 +134,14 @@ where
             ox,
             oy,
             oz,
-            bricks: Brick::from_bin(&data[HEADER_SIZE..], vx, vy, vz, aw),
+            data: data.to_vec(),
+            bricks: bricks.collect(),
         }
     }
+
     /// query a single voxel at (x,y,z) in the global coordinate space
     pub fn query(&self, x: usize, y: usize, z: usize) -> T {
-        // convert to node-local coordinates by subtracting this node's origin. This must
-        // be a subtraction, not `x % (vx*bx)`: on the far edge of the volume this node's
-        // stored brick count (bx/by/bz) may not evenly divide the configured node_size
-        // (e.g. 3 bricks stored where a full node would hold 4), and in that case the
-        // modulus would wrap at the wrong period.
+        // convert to node-local coordinates by subtracting this node's origin.
         let x1 = x - self.ox;
         let y1 = y - self.oy;
         let z1 = z - self.oz;
@@ -141,57 +151,10 @@ where
         let brick_y = y1 / self.vy;
         let brick_z = z1 / self.vz;
         debug_assert!(brick_x < self.bx && brick_y < self.by && brick_z < self.bz);
+
         let brick_index = brick_z * self.by * self.bx + brick_y * self.bx + brick_x;
 
         // then query the brick
-        self.bricks[brick_index].query(x, y, z)
-    }
-}
-
-pub struct Brick<T>
-where
-    T: FromBytes + Copy + bytemuck::Pod,
-{
-    vx: usize,
-    vy: usize,
-    vz: usize,
-    aw: usize,
-    data: Vec<T>,
-}
-
-impl<T> Brick<T>
-where
-    T: FromBytes + Copy + bytemuck::Pod,
-{
-    pub fn from_bin(data: &[u8], vx: usize, vy: usize, vz: usize, aw: usize) -> Vec<Self> {
-        let item_size = core::mem::size_of::<T>();
-        let brick_size = (vx + aw + aw) * (vy + aw + aw) * (vz + aw + aw) * item_size;
-
-        (0..(data.len() / brick_size))
-            .map(|i| Self {
-                data: bytemuck::cast_slice::<u8, T>(&data[i * brick_size..(i + 1) * brick_size])
-                    .to_vec(),
-                vx,
-                vy,
-                vz,
-                aw,
-            })
-            .collect()
-    }
-
-    /// query a single voxel at (x,y,z) in the global coordinate space
-    pub fn query(&self, x: usize, y: usize, z: usize) -> T {
-        // convert to local coordinates
-        let x = x % self.vx;
-        let y = y % self.vy;
-        let z = z % self.vz;
-
-        // fully skipped stride has pre-apron and post-apron
-        let stride_x = self.vx + self.aw + self.aw;
-        let stride_y = self.vy + self.aw + self.aw;
-
-        // unskipped stride only has pre-apron
-        let index = (x + self.aw) + (y + self.aw) * stride_x + (z + self.aw) * stride_x * stride_y;
-        self.data[index]
+        self.bricks[brick_index].query(x, y, z, &self.data)
     }
 }

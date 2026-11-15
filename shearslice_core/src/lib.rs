@@ -1,3 +1,4 @@
+mod brick;
 mod layer;
 mod node;
 pub use node::Node;
