@@ -21,12 +21,14 @@ image = {version = "0.25.9", default-features = false, features = ["png","bmp","
 serde = { version = "1.0.228", default-features = false, features = ["derive","alloc",] } # alloc is for no_std, derive is needed
 num-traits = "0.2.19"
 bytemuck = "1.25.0"
+async-trait = "0.1"
 bytes = { version = "1.12.1", default-features = false }
 
 [dev-dependencies]
 netcdf = "0.12.1"
 hdf5-metno-sys = "0.12.5"
 rstest = "0.25.0"
+futures = { version = "0.3", default-features = false, features = ["executor"] }
 
 [lints.rust]
 unsafe_code = "forbid"
