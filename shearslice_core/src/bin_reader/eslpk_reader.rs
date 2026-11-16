@@ -1,14 +1,16 @@
+use bytes::Bytes;
+
 use super::BinReader;
 
 /// Read the binary file from eslpk
 pub(crate) struct EslpkBinReader {
     // filepath? file handle?
-    data: Vec<u8>,
+    data: Bytes,
 }
 
 impl BinReader for EslpkBinReader {
-    fn get_data(&self) -> &[u8] {
-        &self.data
+    fn get_data(&self) -> Bytes {
+        self.data.clone()
     }
     fn len(&self) -> usize {
         self.data.len()
@@ -16,7 +18,7 @@ impl BinReader for EslpkBinReader {
 }
 
 impl EslpkBinReader {
-    pub(crate) fn new(data: Vec<u8>) -> Self {
+    pub(crate) fn new(data: Bytes) -> Self {
         Self { data }
     }
 }

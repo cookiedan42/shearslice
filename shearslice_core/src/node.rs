@@ -1,6 +1,7 @@
 //! A logical grouping of bricks in a voxel layer, encoded as a single file
 
-use crate::bin_reader::BinReader;
+use crate::bin_reader::{BinReader, BinReaderExt};
+use std::rc::Rc;
 
 use super::brick::Brick;
 
@@ -89,7 +90,7 @@ where
     /// bricks, or if the mask isn't a rectangle anchored at the origin.
     #[allow(clippy::too_many_arguments)]
     pub fn from_bin<B: BinReader>(
-        data: &Box<B>,
+        data: &Rc<B>,
         node_size: [usize; 3],
         vx: usize,
         vy: usize,
@@ -103,19 +104,18 @@ where
         );
 
         // Brick offset derived from Node
-        let bx = u32::from_le_bytes(data.get_at(0, 4).try_into().unwrap());
-
-        let by = u32::from_le_bytes(data.get_at(4, 8).try_into().unwrap());
-        let bz = u32::from_le_bytes(data.get_at(8, 12).try_into().unwrap());
+        let bx = data.read_as::<u32>(0);
+        let by = data.read_as::<u32>(4);
+        let bz = data.read_as::<u32>(8);
 
         // Voxel offset by multiplying
         let ox = bx as usize * vx;
         let oy = by as usize * vy;
         let oz = bz as usize * vz;
 
-        let brick_size = u32::from_le_bytes(data.get_at(12, 16).try_into().unwrap()) as usize;
+        let brick_size = data.read_as::<u32>(12) as usize;
 
-        let mask = u64::from_le_bytes(data.get_at(16, 24).try_into().unwrap());
+        let mask = data.read_as::<u64>(16);
 
         let [bx, by, bz] = stored_extents(mask, node_size);
 

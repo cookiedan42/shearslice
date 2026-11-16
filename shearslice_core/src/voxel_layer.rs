@@ -1,6 +1,7 @@
 use crate::bin_reader::MemoryBinReader;
 use crate::layer::Layer;
 use crate::loaders::{BinLoader, MemoryLoader};
+use std::rc::Rc;
 
 #[cfg(feature = "std")]
 use crate::loaders::FileLoader;
@@ -12,7 +13,7 @@ use hashbrown::HashMap;
 pub struct VoxelLayer<L: BinLoader> {
     layer: Layer,
     loader: L,
-    bins: RefCell<HashMap<(usize, usize, usize, usize), Box<dyn crate::bin_reader::BinReader>>>,
+    bins: RefCell<HashMap<(usize, usize, usize, usize), Rc<dyn crate::bin_reader::BinReader>>>,
     nodes: RefCell<HashMap<(usize, usize, usize, usize), node::Node<f32>>>,
     pub brick_size: [usize; 3],
     pub node_size: [usize; 3],
@@ -80,7 +81,7 @@ impl<L: BinLoader> VoxelLayer<L> {
         data: Vec<u8>,
     ) {
         let key = (layer_id, node_x, node_y, node_z);
-        let bin = Box::new(MemoryBinReader::new(data));
+        let bin = Rc::new(MemoryBinReader::new(data.into()));
 
         let node = node::Node::from_bin(
             &bin,

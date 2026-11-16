@@ -1,13 +1,15 @@
+use bytes::Bytes;
+
 use super::BinReader;
 
 #[derive(Clone)]
 pub struct MemoryBinReader {
-    data: Vec<u8>,
+    data: Bytes,
 }
 
 impl BinReader for MemoryBinReader {
-    fn get_data(&self) -> &[u8] {
-        &self.data
+    fn get_data(&self) -> Bytes {
+        self.data.clone()
     }
     fn len(&self) -> usize {
         self.data.len()
@@ -15,7 +17,7 @@ impl BinReader for MemoryBinReader {
 }
 
 impl MemoryBinReader {
-    pub(crate) fn new(data: Vec<u8>) -> Self {
+    pub(crate) fn new(data: Bytes) -> Self {
         Self { data }
     }
 }

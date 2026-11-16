@@ -48,6 +48,6 @@ where
         // unskipped stride only has pre-apron
         let index = (x + self.aw) + (y + self.aw) * stride_x + (z + self.aw) * stride_x * stride_y;
 
-        bytemuck::cast_slice::<u8, T>(data.get_at(self.start, self.end))[index]
+        bytemuck::cast_slice::<u8, T>(&data.get_at(self.start, self.end))[index]
     }
 }

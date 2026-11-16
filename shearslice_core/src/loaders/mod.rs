@@ -1,3 +1,6 @@
+#[cfg(feature = "std")]
+use std::rc::Rc;
+
 use hashbrown::HashMap;
 
 #[cfg(feature = "std")]
@@ -7,7 +10,7 @@ use crate::bin_reader::{BinReader, MemoryBinReader};
 /// Trait for loading binary data from different sources
 pub trait BinLoader {
     type Reader: BinReader + 'static;
-    fn load(&self, path: &str) -> Result<Box<Self::Reader>, String>;
+    fn load(&self, path: &str) -> Result<Rc<Self::Reader>, String>;
 }
 
 /// File system loader for native builds
@@ -28,8 +31,8 @@ impl FileLoader {
 #[cfg(feature = "std")]
 impl BinLoader for FileLoader {
     type Reader = SlpkBinReader;
-    fn load(&self, path: &str) -> Result<Box<SlpkBinReader>, String> {
-        Ok(Box::new(SlpkBinReader::new(&format!(
+    fn load(&self, path: &str) -> Result<Rc<SlpkBinReader>, String> {
+        Ok(Rc::new(SlpkBinReader::new(&format!(
             "{}/{}",
             self.base_path, path
         ))))
@@ -49,11 +52,6 @@ impl MemoryLoader {
             data: HashMap::new(),
         }
     }
-
-    pub fn insert(&mut self, path: &str, data: Vec<u8>) {
-        self.data
-            .insert(path.to_string(), MemoryBinReader::new(data));
-    }
 }
 
 impl Default for MemoryLoader {
@@ -65,10 +63,10 @@ impl Default for MemoryLoader {
 impl BinLoader for MemoryLoader {
     type Reader = MemoryBinReader;
 
-    fn load(&self, path: &str) -> Result<Box<MemoryBinReader>, String> {
+    fn load(&self, path: &str) -> Result<Rc<MemoryBinReader>, String> {
         self.data
             .get(path)
-            .map(|data| Box::new(data.clone()))
+            .map(|data| Rc::new(data.clone()))
             .ok_or_else(|| format!("Data not found: {}", path))
     }
 }
