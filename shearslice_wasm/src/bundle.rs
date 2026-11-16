@@ -1,5 +1,5 @@
 use hashbrown::HashMap;
-use shearslice_core::{MemoryLoader, VoxelLayer};
+use shearslice_core::{ImplVoxelLayer, MemoryLoader};
 use wasm_bindgen::prelude::*;
 
 /// Sentinel used in `BundlePlan::assignments` for a point that has no data:
@@ -39,7 +39,7 @@ impl BundlePlan {
 /// flight are ever resident in memory.
 #[wasm_bindgen]
 pub struct VoxelQuery {
-    layer: VoxelLayer<MemoryLoader>,
+    layer: ImplVoxelLayer<MemoryLoader>,
     layer_id: usize,
 }
 
@@ -50,7 +50,7 @@ impl VoxelQuery {
     #[wasm_bindgen(constructor)]
     #[must_use]
     pub fn new(layer_json: &str, layer_id: usize) -> Self {
-        let layer = VoxelLayer::<MemoryLoader>::from_layer_json(layer_json);
+        let layer = ImplVoxelLayer::<MemoryLoader>::from_layer_json(layer_json);
         Self { layer, layer_id }
     }
 

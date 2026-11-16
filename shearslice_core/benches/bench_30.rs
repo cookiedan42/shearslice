@@ -1,8 +1,8 @@
-use shearslice_core::VoxelLayer;
+use shearslice_core::ImplVoxelLayer;
 
 fn main() {
     // Load the voxel layer
-    let layer = VoxelLayer::from_file("../data/1024");
+    let layer = ImplVoxelLayer::from_file("../data/1024");
 
     // Run queries to generate meaningful flame data
     let x_len = layer.layer().volumes()[0].dimensions()[0].size();

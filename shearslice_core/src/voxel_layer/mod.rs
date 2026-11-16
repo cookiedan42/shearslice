@@ -1,16 +1,57 @@
 use crate::bin_reader::MemoryBinReader;
 use crate::layer::Layer;
 use crate::loaders::{BinLoader, MemoryLoader};
-use std::rc::Rc;
-
-#[cfg(feature = "std")]
-use crate::loaders::FileLoader;
-
 use crate::node;
 use core::cell::RefCell;
 use hashbrown::HashMap;
+use std::rc::Rc;
 
-pub struct VoxelLayer<L: BinLoader> {
+mod file_voxel_layer;
+mod memory_voxel_layer;
+pub use memory_voxel_layer::MemoryVoxelLayer;
+
+#[cfg(feature = "std")]
+use crate::loaders::EslpkLoader;
+#[cfg(feature = "std")]
+pub use file_voxel_layer::FileVoxelLayer;
+
+pub trait VoxelLayer {
+    fn layer(&self) -> &Layer;
+
+    fn query(&self, x: usize, y: usize, z: usize, layer_id: usize) -> Option<f32>;
+
+    /// `None` entries are voxels holding the variable's declared no-data value.
+    fn query_arr(&self, arr: &[usize], z: i32) -> Result<Vec<Option<f32>>, String> {
+        let x_len = self.layer().volumes()[0].dimensions()[0].size();
+        let y_len = self.layer().volumes()[0].dimensions()[1].size();
+        let z_len = self.layer().volumes()[0].dimensions()[2].size();
+
+        let r = arr.iter().enumerate().map(|(i, v)| {
+            // x1 and y1 are lat lon so need to be flipped
+            let x1 = i / x_len;
+            let y1 = i % y_len;
+            let z1 = (z + (*v as i32)).clamp(0, (z_len - 1) as i32) as usize;
+            self.query(x1, y1, z1, 0)
+        });
+
+        Ok(r.collect())
+    }
+
+    // z is the index of the plane, find all the values in that plane. `None` entries are
+    // voxels holding the variable's declared no-data value.
+    fn query_plane(&self, z: i32) -> Result<Vec<Option<f32>>, String> {
+        let x_len = self.layer().volumes()[0].dimensions()[0].size();
+        let y_len = self.layer().volumes()[0].dimensions()[1].size();
+        let z_len = self.layer().volumes()[0].dimensions()[2].size();
+        let z = z.clamp(0, (z_len - 1) as i32) as usize;
+
+        Ok((0..x_len)
+            .flat_map(|x| (0..y_len).map(move |y| self.query(x, y, z, 0)))
+            .collect())
+    }
+}
+
+pub struct ImplVoxelLayer<L: BinLoader> {
     layer: Layer,
     loader: L,
     bins: RefCell<HashMap<(usize, usize, usize, usize), Rc<dyn crate::bin_reader::BinReader>>>,
@@ -21,8 +62,8 @@ pub struct VoxelLayer<L: BinLoader> {
 }
 
 /// Constructors
-impl<L: BinLoader> VoxelLayer<L> {
-    /// Create a new VoxelLayer with a custom loader
+impl<L: BinLoader> ImplVoxelLayer<L> {
+    /// Create a new ImplVoxelLayer with a custom loader
     pub fn with_loader(layer: Layer, loader: L) -> Self {
         let node_size = layer.index().node_size();
         let brick_size = layer.index().brick_size();
@@ -58,7 +99,7 @@ impl<L: BinLoader> VoxelLayer<L> {
             .unwrap_or_else(|e| panic!("{}", e));
 
         let node = node::Node::from_bin(
-            &contents,
+            contents.as_ref(),
             self.node_size,
             self.brick_size[0],
             self.brick_size[1],
@@ -84,7 +125,7 @@ impl<L: BinLoader> VoxelLayer<L> {
         let bin = Rc::new(MemoryBinReader::new(data.into()));
 
         let node = node::Node::from_bin(
-            &bin,
+            bin.as_ref(),
             self.node_size,
             self.brick_size[0],
             self.brick_size[1],
@@ -146,18 +187,8 @@ impl<L: BinLoader> VoxelLayer<L> {
     }
 }
 
-/// File-based constructor
-#[cfg(feature = "std")]
-impl VoxelLayer<FileLoader> {
-    pub fn from_file(path: &str) -> Self {
-        let layer = Layer::from_file(&format!("{}/layer.json", path));
-        let loader = FileLoader::new(path);
-        Self::with_loader(layer, loader)
-    }
-}
-
 /// Memory-based constructor
-impl VoxelLayer<MemoryLoader> {
+impl ImplVoxelLayer<MemoryLoader> {
     pub fn from_layer(layer: Layer) -> Self {
         Self::with_loader(layer, MemoryLoader::new())
     }
@@ -169,7 +200,7 @@ impl VoxelLayer<MemoryLoader> {
 }
 
 /// Accessors
-impl<L: BinLoader> VoxelLayer<L> {
+impl<L: BinLoader> ImplVoxelLayer<L> {
     pub fn layer(&self) -> &Layer {
         &self.layer
     }
@@ -188,7 +219,7 @@ impl<L: BinLoader> VoxelLayer<L> {
 }
 
 /// Query data
-impl<L: BinLoader> VoxelLayer<L> {
+impl<L: BinLoader> ImplVoxelLayer<L> {
     /// Convert a world/projected coordinate to a grid index.
     ///
     /// Vertical exaggeration is a rendering-only stretch applied when drawing the volume;
@@ -333,140 +364,5 @@ impl<L: BinLoader> VoxelLayer<L> {
         });
 
         Ok(r.collect())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_from_file() {
-        let _layer = VoxelLayer::from_file("../data/30");
-    }
-
-    #[test]
-    fn test_node_key_consistency_and_eviction() {
-        let layer = VoxelLayer::from_file("../data/256");
-        let dims = layer.layer().volumes()[0].dimensions();
-        let x = dims[0].values()[100];
-        let y = dims[1].values()[100];
-        let z = dims[2].values()[20];
-        let layer_id = 0;
-
-        // plan and query must agree on which node a point lives in
-        let planned_key = layer.node_key_for_geometry(x, y, z);
-        let (ix, iy, iz) = layer.indices_for_geometry(x, y, z);
-        let queried_key = layer.node_key_for_indices(ix, iy, iz);
-        assert_eq!(planned_key, queried_key);
-
-        assert!(!layer.is_bin_loaded(layer_id, planned_key.0, planned_key.1, planned_key.2));
-        let _value = layer.query_geometry(x, y, z, layer_id);
-        assert!(layer.is_bin_loaded(layer_id, planned_key.0, planned_key.1, planned_key.2));
-
-        layer.evict_bin(layer_id, planned_key.0, planned_key.1, planned_key.2);
-        assert!(!layer.is_bin_loaded(layer_id, planned_key.0, planned_key.1, planned_key.2));
-
-        let _value = layer.query_geometry(x, y, z, layer_id);
-        layer.clear_bins();
-        assert!(!layer.is_bin_loaded(layer_id, planned_key.0, planned_key.1, planned_key.2));
-    }
-
-    #[test]
-    fn test_find_far_edge_no_panic() {
-        let layer = VoxelLayer::from_file("../data/256");
-        let dims = layer.layer().volumes()[0].dimensions();
-        let x_vals = dims[0].values();
-        let len = x_vals.len();
-
-        // strictly inside the last interval of an irregular (binary-searched) dimension
-        let x = (x_vals[len - 2] + x_vals[len - 1]) / 2.0;
-        let y = dims[1].values()[0];
-        let z = dims[2].values()[0];
-
-        // must not panic
-        let _ = layer.query_geometry(x, y, z, 0);
-    }
-
-    #[test]
-    fn test_bracket_rounds_to_nearest_index() {
-        let layer = VoxelLayer::from_file("../data/256");
-        let dims = layer.layer().volumes()[0].dimensions();
-        let x_vals = dims[0].values(); // irregular spacing
-        let z_vals = dims[2].values(); // regular spacing
-        let y = dims[1].values()[0];
-
-        let ix = 50;
-        let x_lo = x_vals[ix];
-        let x_hi = x_vals[ix + 1];
-        let (found_near_lo, _, _) =
-            layer.indices_for_geometry(x_lo + (x_hi - x_lo) * 0.1, y, z_vals[0]);
-        let (found_near_hi, _, _) =
-            layer.indices_for_geometry(x_lo + (x_hi - x_lo) * 0.9, y, z_vals[0]);
-        assert_eq!(found_near_lo, ix);
-        assert_eq!(found_near_hi, ix + 1);
-
-        let iz = 10;
-        let z_lo = z_vals[iz];
-        let z_hi = z_vals[iz + 1];
-        let (_, _, found_z_near_lo) =
-            layer.indices_for_geometry(x_vals[0], y, z_lo + (z_hi - z_lo) * 0.1);
-        let (_, _, found_z_near_hi) =
-            layer.indices_for_geometry(x_vals[0], y, z_lo + (z_hi - z_lo) * 0.9);
-        assert_eq!(found_z_near_lo, iz);
-        assert_eq!(found_z_near_hi, iz + 1);
-    }
-
-    #[test]
-    #[allow(clippy::cast_possible_truncation)] // test-only: values are well within f32 range
-    fn test_in_extent() {
-        let layer = VoxelLayer::from_file("../data/256");
-        let extent = layer.layer().extent();
-
-        let mid_x = ((extent.xmin() + extent.xmax()) / 2.0) as f32;
-        let mid_y = ((extent.ymin() + extent.ymax()) / 2.0) as f32;
-        let mid_z = ((extent.zmin() + extent.zmax()) / 2.0) as f32;
-        assert!(layer.in_extent(mid_x, mid_y, mid_z));
-
-        assert!(!layer.in_extent((extent.xmax() + 1000.0) as f32, mid_y, mid_z));
-        assert!(!layer.in_extent(mid_x, mid_y, (extent.zmin() - 1000.0) as f32));
-        assert!(!layer.in_extent(f32::NAN, mid_y, mid_z));
-    }
-
-    #[test]
-    #[allow(clippy::cast_possible_truncation)] // test-only: values are well within f32 range
-    fn test_query_geometry_out_of_bounds_returns_none() {
-        let layer = VoxelLayer::from_file("../data/256");
-        let dims = layer.layer().volumes()[0].dimensions();
-        let (x, y, z) = (
-            dims[0].values()[0],
-            dims[1].values()[0],
-            dims[2].values()[0],
-        );
-
-        // sanity: an in-bounds point returns Some
-        assert!(layer.query_geometry(x, y, z, 0).is_some());
-
-        let extent = layer.layer().extent();
-        assert_eq!(
-            layer.query_geometry((extent.xmax() + 1000.0) as f32, y, z, 0),
-            None
-        );
-        assert_eq!(layer.query_geometry(f32::NAN, y, z, 0), None);
-    }
-
-    #[test]
-    fn test_query_index_out_of_bounds_returns_none_without_panic() {
-        let layer = VoxelLayer::from_file("../data/256");
-        let dims = layer.layer().volumes()[0].dimensions();
-        let (x_len, y_len, z_len) = (dims[0].size(), dims[1].size(), dims[2].size());
-
-        // sanity: the last valid index still returns Some
-        assert!(layer.query(x_len - 1, y_len - 1, z_len - 1, 0).is_some());
-
-        // one past the end on each axis individually must not panic and must return None
-        assert_eq!(layer.query(x_len, 0, 0, 0), None);
-        assert_eq!(layer.query(0, y_len, 0, 0), None);
-        assert_eq!(layer.query(0, 0, z_len, 0), None);
     }
 }

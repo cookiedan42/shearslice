@@ -5,7 +5,7 @@ use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct VoxelData {
-    layer: shearslice_core::VoxelLayer<shearslice_core::MemoryLoader>,
+    layer: shearslice_core::ImplVoxelLayer<shearslice_core::MemoryLoader>,
     layer_id: usize,
 }
 
@@ -29,7 +29,9 @@ impl VoxelData {
     /// Create a new VoxelData from a layer json and a typed array of values
     pub fn make_layer(layer: &str, values: Array, layer_id: usize) -> Self {
         let layer =
-            shearslice_core::VoxelLayer::<shearslice_core::MemoryLoader>::from_layer_json(layer);
+            shearslice_core::ImplVoxelLayer::<shearslice_core::MemoryLoader>::from_layer_json(
+                layer,
+            );
 
         let mut vec_values: Vec<Vec<u8>> = Vec::new();
 

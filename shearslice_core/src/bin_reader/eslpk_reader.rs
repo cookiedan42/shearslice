@@ -3,22 +3,26 @@ use bytes::Bytes;
 use super::BinReader;
 
 /// Read the binary file from eslpk
-pub(crate) struct EslpkBinReader {
-    // filepath? file handle?
-    data: Bytes,
+pub struct EslpkBinReader {
+    path: String,
 }
 
 impl BinReader for EslpkBinReader {
     fn get_data(&self) -> Bytes {
-        self.data.clone()
+        // Opens and reads the file each access but that's ok
+        std::fs::read(&self.path)
+            .expect("path not found, unable to load bin")
+            .into()
     }
     fn len(&self) -> usize {
-        self.data.len()
+        self.get_data().len()
     }
 }
 
 impl EslpkBinReader {
-    pub(crate) fn new(data: Bytes) -> Self {
-        Self { data }
+    pub(crate) fn new(path: &str) -> Self {
+        Self {
+            path: path.to_string(),
+        }
     }
 }

@@ -8,11 +8,9 @@ mod variable_index;
 mod voxel_layer;
 pub use layer::Layer;
 #[cfg(feature = "std")]
-pub use loaders::FileLoader;
-pub use loaders::{BinLoader, MemoryLoader};
 pub use png::to_png;
 pub use variable_index::Index;
-pub use voxel_layer::VoxelLayer;
+pub use voxel_layer::ImplVoxelLayer;
 mod bin_reader;
 
 /*
@@ -34,7 +32,7 @@ v4 rayon per file?
 
 #[cfg(test)]
 mod tests {
-    use crate::voxel_layer::VoxelLayer;
+    use crate::voxel_layer::{FileVoxelLayer, ImplVoxelLayer, VoxelLayer};
     use rstest::rstest;
 
     /// compare coordinate by coordinate reading of the slpk file against the netcdf file
@@ -44,7 +42,7 @@ mod tests {
     #[case("768")]
     #[case("1024")]
     fn test_coord(#[case] name: &str) {
-        let layer = VoxelLayer::from_file(&format!("../data/{name}"));
+        let layer = FileVoxelLayer::from_file(&format!("../data/{name}"));
         let netcdf_file = netcdf::open(&format!("../data/2D_Result_{name}.nc")).unwrap();
 
         let windspeed_var = netcdf_file.variable("WindSpeed").unwrap();
@@ -82,7 +80,7 @@ mod tests {
     #[case("30")]
     #[case("256")]
     fn test_geometry_round_trip(#[case] name: &str) {
-        let layer = VoxelLayer::from_file(&format!("../data/{name}"));
+        let layer = FileVoxelLayer::from_file(&format!("../data/{name}"));
         let netcdf_file = netcdf::open(&format!("../data/2D_Result_{name}.nc")).unwrap();
         let windspeed_var = netcdf_file.variable("WindSpeed").unwrap();
 
@@ -120,7 +118,7 @@ mod tests {
     /// archive and this reader only reads already-unpacked, gunzipped files.
     #[test]
     fn test_coord_format2() {
-        let layer = VoxelLayer::from_file("../data/format2");
+        let layer = FileVoxelLayer::from_file("../data/format2");
         let netcdf_file = netcdf::open("../data/format2.nc").unwrap();
 
         let windspeed_var = netcdf_file.variable("WindSpeed").unwrap();

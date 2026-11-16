@@ -1,7 +1,6 @@
 //! A logical grouping of bricks in a voxel layer, encoded as a single file
 
 use crate::bin_reader::{BinReader, BinReaderExt};
-use std::rc::Rc;
 
 use super::brick::Brick;
 
@@ -90,7 +89,7 @@ where
     /// bricks, or if the mask isn't a rectangle anchored at the origin.
     #[allow(clippy::too_many_arguments)]
     pub fn from_bin<B: BinReader>(
-        data: &Rc<B>,
+        data: &B,
         node_size: [usize; 3],
         vx: usize,
         vy: usize,

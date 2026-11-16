@@ -1,4 +1,4 @@
-use shearslice_core::{Layer, VoxelLayer};
+use shearslice_core::{ImplVoxelLayer, Layer};
 use wasm_bindgen::prelude::*;
 mod geom;
 mod voxeldata;
@@ -42,7 +42,7 @@ pub fn get_paths(url: &str, layer_json: &str, layer_id: usize) -> Vec<String> {
 }
 
 pub(crate) fn get_keys<T: shearslice_core::BinLoader>(
-    layer: &VoxelLayer<T>,
+    layer: &ImplVoxelLayer<T>,
     layer_id: usize,
 ) -> Vec<usize> {
     let mut res = Vec::new();
