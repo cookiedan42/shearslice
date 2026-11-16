@@ -3,7 +3,7 @@ use wasm_bindgen::prelude::*;
 mod geom;
 mod voxeldata;
 pub use voxeldata::VoxelData;
-mod bundle;
+// mod bundle;
 
 #[wasm_bindgen(start)]
 pub fn start() {

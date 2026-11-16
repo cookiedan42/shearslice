@@ -1,5 +1,7 @@
 //! A logical grouping of bricks in a voxel layer, encoded as a single file
 
+use crate::bin_reader::BinReader;
+
 use super::brick::Brick;
 
 /// size in bytes of the header at the start of every node bin
@@ -86,8 +88,8 @@ where
     /// Panics if `data` is shorter than the header, if `node_size` has more than 64
     /// bricks, or if the mask isn't a rectangle anchored at the origin.
     #[allow(clippy::too_many_arguments)]
-    pub fn from_bin(
-        data: &[u8],
+    pub fn from_bin<B: BinReader>(
+        data: &Box<B>,
         node_size: [usize; 3],
         vx: usize,
         vy: usize,
@@ -101,19 +103,19 @@ where
         );
 
         // Brick offset derived from Node
-        let bx = u32::from_le_bytes(data[0..4].try_into().unwrap());
+        let bx = u32::from_le_bytes(data.get_at(0, 4).try_into().unwrap());
 
-        let by = u32::from_le_bytes(data[4..8].try_into().unwrap());
-        let bz = u32::from_le_bytes(data[8..12].try_into().unwrap());
+        let by = u32::from_le_bytes(data.get_at(4, 8).try_into().unwrap());
+        let bz = u32::from_le_bytes(data.get_at(8, 12).try_into().unwrap());
 
         // Voxel offset by multiplying
         let ox = bx as usize * vx;
         let oy = by as usize * vy;
         let oz = bz as usize * vz;
 
-        let brick_size = u32::from_le_bytes(data[12..16].try_into().unwrap()) as usize;
+        let brick_size = u32::from_le_bytes(data.get_at(12, 16).try_into().unwrap()) as usize;
 
-        let mask = u64::from_le_bytes(data[16..24].try_into().unwrap());
+        let mask = u64::from_le_bytes(data.get_at(16, 24).try_into().unwrap());
 
         let [bx, by, bz] = stored_extents(mask, node_size);
 
@@ -136,7 +138,7 @@ where
     }
 
     /// query a single voxel at (x,y,z) in the global coordinate space
-    pub fn query(&self, x: usize, y: usize, z: usize, data: &[u8]) -> T {
+    pub fn query<B: BinReader + ?Sized>(&self, x: usize, y: usize, z: usize, data: &B) -> T {
         // convert to node-local coordinates by subtracting this node's origin.
         let x1 = x - self.ox;
         let y1 = y - self.oy;

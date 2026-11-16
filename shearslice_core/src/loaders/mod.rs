@@ -1,8 +1,13 @@
 use hashbrown::HashMap;
 
+#[cfg(feature = "std")]
+use crate::bin_reader::SlpkBinReader;
+use crate::bin_reader::{BinReader, MemoryBinReader};
+
 /// Trait for loading binary data from different sources
 pub trait BinLoader {
-    fn load(&self, path: &str) -> Result<Vec<u8>, String>;
+    type Reader: BinReader + 'static;
+    fn load(&self, path: &str) -> Result<Box<Self::Reader>, String>;
 }
 
 /// File system loader for native builds
@@ -22,15 +27,20 @@ impl FileLoader {
 
 #[cfg(feature = "std")]
 impl BinLoader for FileLoader {
-    fn load(&self, path: &str) -> Result<Vec<u8>, String> {
-        std::fs::read(format!("{}/{}", self.base_path, path))
-            .map_err(|e| format!("Failed to read {}: {}", path, e))
+    type Reader = SlpkBinReader;
+    fn load(&self, path: &str) -> Result<Box<SlpkBinReader>, String> {
+        Ok(Box::new(SlpkBinReader::new(&format!(
+            "{}/{}",
+            self.base_path, path
+        ))))
     }
 }
 
 /// In-memory loader for pre-loaded data (works in WASM)
 pub struct MemoryLoader {
-    data: HashMap<String, Vec<u8>>,
+    // key is eslpk path
+    // value is data
+    data: HashMap<String, MemoryBinReader>,
 }
 
 impl MemoryLoader {
@@ -41,7 +51,8 @@ impl MemoryLoader {
     }
 
     pub fn insert(&mut self, path: &str, data: Vec<u8>) {
-        self.data.insert(path.to_string(), data);
+        self.data
+            .insert(path.to_string(), MemoryBinReader::new(data));
     }
 }
 
@@ -52,10 +63,12 @@ impl Default for MemoryLoader {
 }
 
 impl BinLoader for MemoryLoader {
-    fn load(&self, path: &str) -> Result<Vec<u8>, String> {
+    type Reader = MemoryBinReader;
+
+    fn load(&self, path: &str) -> Result<Box<MemoryBinReader>, String> {
         self.data
             .get(path)
-            .cloned()
+            .map(|data| Box::new(data.clone()))
             .ok_or_else(|| format!("Data not found: {}", path))
     }
 }

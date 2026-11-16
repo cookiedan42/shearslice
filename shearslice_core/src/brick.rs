@@ -1,5 +1,7 @@
 use std::marker::PhantomData;
 
+use crate::bin_reader::BinReader;
+
 // Representation of an up to 32x32x32 brick of values
 // with apron of 1 around each size
 //
@@ -33,7 +35,7 @@ where
     }
 
     /// query a single voxel at (x,y,z) in the global coordinate space
-    pub fn query(&self, x: usize, y: usize, z: usize, data: &[u8]) -> T {
+    pub fn query<B: BinReader + ?Sized>(&self, x: usize, y: usize, z: usize, data: &B) -> T {
         // convert to local coordinates
         let x = x % self.vx;
         let y = y % self.vy;
@@ -46,6 +48,6 @@ where
         // unskipped stride only has pre-apron
         let index = (x + self.aw) + (y + self.aw) * stride_x + (z + self.aw) * stride_x * stride_y;
 
-        bytemuck::cast_slice::<u8, T>(&data[self.start..self.end])[index]
+        bytemuck::cast_slice::<u8, T>(data.get_at(self.start, self.end))[index]
     }
 }

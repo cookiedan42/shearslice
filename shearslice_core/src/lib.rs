@@ -13,6 +13,7 @@ pub use loaders::{BinLoader, MemoryLoader};
 pub use png::to_png;
 pub use variable_index::Index;
 pub use voxel_layer::VoxelLayer;
+mod bin_reader;
 
 /*
 

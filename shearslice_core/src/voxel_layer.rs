@@ -1,3 +1,4 @@
+use crate::bin_reader::MemoryBinReader;
 use crate::layer::Layer;
 use crate::loaders::{BinLoader, MemoryLoader};
 
@@ -11,7 +12,7 @@ use hashbrown::HashMap;
 pub struct VoxelLayer<L: BinLoader> {
     layer: Layer,
     loader: L,
-    bins: RefCell<HashMap<(usize, usize, usize, usize), Vec<u8>>>,
+    bins: RefCell<HashMap<(usize, usize, usize, usize), Box<dyn crate::bin_reader::BinReader>>>,
     nodes: RefCell<HashMap<(usize, usize, usize, usize), node::Node<f32>>>,
     pub brick_size: [usize; 3],
     pub node_size: [usize; 3],
@@ -69,6 +70,7 @@ impl<L: BinLoader> VoxelLayer<L> {
     }
 
     /// Preload a specific bin
+    /// internal mutation of `self.bins` and `self.nodes`
     pub fn preload_bin(
         &self,
         layer_id: usize,
@@ -78,16 +80,17 @@ impl<L: BinLoader> VoxelLayer<L> {
         data: Vec<u8>,
     ) {
         let key = (layer_id, node_x, node_y, node_z);
+        let bin = Box::new(MemoryBinReader::new(data));
 
         let node = node::Node::from_bin(
-            &data,
+            &bin,
             self.node_size,
             self.brick_size[0],
             self.brick_size[1],
             self.brick_size[2],
             self.apron_width,
         );
-        self.bins.borrow_mut().insert(key, data);
+        self.bins.borrow_mut().insert(key, bin);
         self.nodes.borrow_mut().insert(key, node);
     }
 
@@ -293,7 +296,7 @@ impl<L: BinLoader> VoxelLayer<L> {
             .borrow()
             .get(&(layer_id, node_x, node_y, node_z))
             .unwrap_or_else(|| panic!("Bin data not found for {node_x},{node_y},{node_z}"))
-            .query(x, y, z, bin_data);
+            .query(x, y, z, bin_data.as_ref());
 
         match self.layer.no_data_for(layer_id) {
             Some(no_data) if raw == no_data => None,
