@@ -4,6 +4,10 @@ mod geom;
 mod voxeldata;
 pub use voxeldata::VoxelData;
 // mod bundle;
+mod cached_query;
+mod store;
+pub use cached_query::CachedVoxelQuery;
+pub use store::{IdbCache, JsFnStore};
 
 #[wasm_bindgen(start)]
 pub fn start() {
