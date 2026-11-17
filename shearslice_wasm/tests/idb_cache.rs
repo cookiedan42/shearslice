@@ -131,3 +131,78 @@ async fn binary_payload_round_trips_exactly() {
     assert_eq!(cold.calls.get(), 0);
     assert_eq!(&from_idb[..], &DATA[..]);
 }
+
+/// Read the raw stored value for `{ns}/{path}` straight from IndexedDB.
+async fn raw_entry(ns: &str, path: &str) -> Option<Vec<u8>> {
+    use indexed_db_futures::database::Database;
+    use indexed_db_futures::prelude::*;
+    use indexed_db_futures::typed_array::Uint8Array;
+
+    let db = Database::open(DB).await.unwrap();
+    let tx = db.transaction("bins").build().unwrap();
+    let store = tx.object_store("bins").unwrap();
+    let v: Option<Uint8Array> = store
+        .get(format!("{ns}/{path}"))
+        .primitive()
+        .unwrap()
+        .await
+        .unwrap();
+    v.map(Vec::from)
+}
+
+#[wasm_bindgen_test]
+async fn stored_entry_is_compressed() {
+    // highly compressible payload, ~4 KB
+    static DATA: [u8; 4096] = [7u8; 4096];
+    let ns = unique_ns("zip");
+    let cache = IdbCache::open(DB, ns.clone(), Counting::new(&DATA)).await.unwrap();
+    cache.get(&BinPath::from("known.bin")).await.unwrap();
+
+    let stored = raw_entry(&ns, "known.bin").await.expect("entry written");
+    assert!(
+        stored.len() < DATA.len() / 4,
+        "stored {} bytes for {}",
+        stored.len(),
+        DATA.len()
+    );
+    // zlib header: CMF = 0x78
+    assert_eq!(stored[0], 0x78, "expected a zlib stream");
+}
+
+#[wasm_bindgen_test]
+async fn corrupt_entry_is_treated_as_miss_and_repaired() {
+    use indexed_db_futures::database::Database;
+    use indexed_db_futures::prelude::*;
+    use indexed_db_futures::transaction::TransactionMode;
+    use indexed_db_futures::typed_array::Uint8ArraySlice;
+
+    let ns = unique_ns("corrupt");
+    // open once so the db/store exist, then plant garbage under the cache's key
+    let seed = Counting::new(b"good");
+    let cache = IdbCache::open(DB, ns.clone(), seed.clone()).await.unwrap();
+    {
+        let db = Database::open(DB).await.unwrap();
+        let tx = db
+            .transaction("bins")
+            .with_mode(TransactionMode::Readwrite)
+            .build()
+            .unwrap();
+        let store = tx.object_store("bins").unwrap();
+        store
+            .put(Uint8ArraySlice::new(b"definitely not zlib"))
+            .with_key(format!("{ns}/known.bin"))
+            .primitive()
+            .unwrap()
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+    }
+
+    let got = cache.get(&BinPath::from("known.bin")).await.unwrap();
+    assert_eq!(&got[..], b"good");
+    assert_eq!(seed.calls.get(), 1, "corrupt entry must fall through to the inner store");
+
+    // and the refetch repaired it: next read is a clean hit
+    assert_eq!(&cache.get(&BinPath::from("known.bin")).await.unwrap()[..], b"good");
+    assert_eq!(seed.calls.get(), 1);
+}

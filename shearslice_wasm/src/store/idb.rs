@@ -7,11 +7,17 @@ use indexed_db_futures::typed_array::{Uint8Array, Uint8ArraySlice};
 use shearslice_core::{BinPath, BinStore, Result};
 
 const STORE: &str = "bins";
+/// Schema version. v1 stored raw bytes; v2 stores zlib-compressed bytes.
+const DB_VERSION: u8 = 2;
+/// Low level: bins are ~5 MB of floats, and write speed matters more than ratio here
+/// (level 3 is ~10x smaller at ~10 ms native).
+const COMPRESSION_LEVEL: u8 = 3;
 
 /// Read-through `IndexedDB` cache in front of another [`BinStore`].
 ///
 /// A hit is served from `IndexedDB`; a miss is fetched from `inner`, written back, and
-/// returned. Cache failures are logged and never fail a read.
+/// returned. Entries are stored zlib-compressed. Cache failures are logged and never
+/// fail a read.
 pub struct IdbCache<S> {
     db: Database,
     /// Key prefix, so several layers can share one database.
@@ -39,11 +45,14 @@ impl<S: BinStore> IdbCache<S> {
         inner: S,
     ) -> core::result::Result<Self, String> {
         let db = Database::open(db_name)
-            .with_version(1u8)
+            .with_version(DB_VERSION)
             .with_on_upgrade_needed(|_event, db| {
-                if !db.object_store_names().any(|name| name == STORE) {
-                    db.create_object_store(STORE).build()?;
+                // Pre-v2 entries are uncompressed and indistinguishable from compressed
+                // ones, so drop them; it's only a cache.
+                if db.object_store_names().any(|name| name == STORE) {
+                    db.delete_object_store(STORE)?;
                 }
+                db.create_object_store(STORE).build()?;
                 Ok(())
             })
             .await
@@ -64,11 +73,24 @@ impl<S: BinStore> IdbCache<S> {
         let tx = self.db.transaction(STORE).build()?;
         let store = tx.object_store(STORE)?;
         let value: Option<Uint8Array> = store.get(key).primitive()?.await?;
-        Ok(value.map(|v| Bytes::from(Vec::<u8>::from(v))))
+        let Some(compressed) = value else {
+            return Ok(None);
+        };
+        match miniz_oxide::inflate::decompress_to_vec_zlib(&Vec::<u8>::from(compressed)) {
+            Ok(raw) => Ok(Some(Bytes::from(raw))),
+            Err(e) => {
+                // Corrupt or foreign entry: treat as a miss; the refetch overwrites it.
+                log::warn!("idb entry {key} failed to decompress: {e:?}");
+                Ok(None)
+            }
+        }
     }
 
     #[allow(clippy::future_not_send)]
     async fn write(&self, key: &str, bytes: &[u8]) -> indexed_db_futures::OpenDbResult<()> {
+        // Compress before opening the transaction: it's CPU-bound and a transaction left
+        // idle can auto-commit.
+        let compressed = miniz_oxide::deflate::compress_to_vec_zlib(bytes, COMPRESSION_LEVEL);
         let tx = self
             .db
             .transaction(STORE)
@@ -76,7 +98,7 @@ impl<S: BinStore> IdbCache<S> {
             .build()?;
         let store = tx.object_store(STORE)?;
         store
-            .put(Uint8ArraySlice::new(bytes))
+            .put(Uint8ArraySlice::new(&compressed))
             .with_key(key)
             .primitive()?
             .await?;

@@ -30,6 +30,7 @@ colorous = {version = "1.0.16", default-features = false }
 async-trait = "0.1"
 bytes = { version = "1.12.1", default-features = false }
 indexed_db_futures = { version = "0.6", features = ["typed-arrays"] }
+miniz_oxide = { version = "0.8", default-features = false }
 
 
 

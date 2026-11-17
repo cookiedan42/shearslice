@@ -1045,6 +1045,7 @@ dependencies = [
  "indexed_db_futures",
  "js-sys",
  "log",
+ "miniz_oxide",
  "rstest",
  "serde",
  "serde-wasm-bindgen",
