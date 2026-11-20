@@ -16,8 +16,10 @@ pub struct CachedVoxelQuery {
 impl CachedVoxelQuery {
     /// `fetch` is `(path: string) => Promise<ArrayBuffer | Uint8Array | null>`, called with
     /// the bin's path relative to the layer root (JS adds the base URL and any auth).
-    /// `cache_namespace` keys the cache entries; include a layer URL and version so a
-    /// republished layer doesn't serve stale bins.
+    /// `db_name` is the `IndexedDB` database to use; JS owns this choice. The object store
+    /// and schema version inside it are managed by wasm.
+    /// `cache_namespace` prefixes the cache keys within that database; include a layer URL
+    /// and version so a republished layer doesn't serve stale bins.
     ///
     /// # Errors
     /// Rejects if `IndexedDB` can't be opened.
@@ -25,10 +27,11 @@ impl CachedVoxelQuery {
     pub async fn open(
         layer_json: String,
         layer_id: usize,
+        db_name: String,
         cache_namespace: String,
         fetch: js_sys::Function,
     ) -> Result<Self, JsValue> {
-        let store = IdbCache::open("shearslice", cache_namespace, JsFnStore::new(fetch))
+        let store = IdbCache::open(&db_name, cache_namespace, JsFnStore::new(fetch))
             .await
             .map_err(|e| JsValue::from_str(&e))?;
         let layer = VoxelLayer::new(Layer::from_str(&layer_json), Arc::new(store));

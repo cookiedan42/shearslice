@@ -14,6 +14,7 @@ wasm_bindgen_test_configure!(run_in_browser);
 const LAYER_JSON: &str = include_str!("../../data/30/layer.json");
 const BIN: &[u8] = include_bytes!("../../data/30/variables/0/0/bundles/0/0-0-0.bin");
 const BIN_PATH: &str = "variables/0/0/bundles/0/0-0-0.bin";
+const DB: &str = "shearslice-test";
 
 /// JS fetch function serving `BIN` at `BIN_PATH`, `null` elsewhere; counts invocations.
 fn fetch_fn(calls: &Rc<Cell<usize>>) -> js_sys::Function {
@@ -77,7 +78,7 @@ fn same(a: &[f32], b: &[f32]) -> bool {
 #[wasm_bindgen_test]
 async fn matches_core_and_fetches_each_bin_once() {
     let calls = Rc::new(Cell::new(0));
-    let q = CachedVoxelQuery::open(LAYER_JSON.into(), 0, unique_ns("q"), fetch_fn(&calls))
+    let q = CachedVoxelQuery::open(LAYER_JSON.into(), 0, DB.into(), unique_ns("q"), fetch_fn(&calls))
         .await
         .unwrap();
     let (xs, ys, zs) = sample_points();
@@ -100,7 +101,7 @@ async fn reopen_with_same_namespace_uses_indexeddb() {
     let want = expected(&xs, &ys, &zs);
 
     let calls1 = Rc::new(Cell::new(0));
-    let q1 = CachedVoxelQuery::open(LAYER_JSON.into(), 0, ns.clone(), fetch_fn(&calls1))
+    let q1 = CachedVoxelQuery::open(LAYER_JSON.into(), 0, DB.into(), ns.clone(), fetch_fn(&calls1))
         .await
         .unwrap();
     query(&q1, &xs, &ys, &zs).await.unwrap();
@@ -109,7 +110,7 @@ async fn reopen_with_same_namespace_uses_indexeddb() {
 
     // new instance = empty node cache, as after a page reload
     let calls2 = Rc::new(Cell::new(0));
-    let q2 = CachedVoxelQuery::open(LAYER_JSON.into(), 0, ns, fetch_fn(&calls2))
+    let q2 = CachedVoxelQuery::open(LAYER_JSON.into(), 0, DB.into(), ns, fetch_fn(&calls2))
         .await
         .unwrap();
     let got = query(&q2, &xs, &ys, &zs).await.unwrap();
@@ -120,7 +121,7 @@ async fn reopen_with_same_namespace_uses_indexeddb() {
 #[wasm_bindgen_test]
 async fn out_of_extent_point_is_nan_without_fetching() {
     let calls = Rc::new(Cell::new(0));
-    let q = CachedVoxelQuery::open(LAYER_JSON.into(), 0, unique_ns("oob"), fetch_fn(&calls))
+    let q = CachedVoxelQuery::open(LAYER_JSON.into(), 0, DB.into(), unique_ns("oob"), fetch_fn(&calls))
         .await
         .unwrap();
     let got = query(&q, &[f32::MAX], &[f32::MAX], &[f32::MAX]).await.unwrap();
@@ -132,7 +133,7 @@ async fn out_of_extent_point_is_nan_without_fetching() {
 async fn missing_bin_rejects() {
     // callback that always reports "no such bin"
     let f = js_sys::Function::new_with_args("p", "return Promise.resolve(null);");
-    let q = CachedVoxelQuery::open(LAYER_JSON.into(), 0, unique_ns("miss"), f)
+    let q = CachedVoxelQuery::open(LAYER_JSON.into(), 0, DB.into(), unique_ns("miss"), f)
         .await
         .unwrap();
     let (xs, ys, zs) = sample_points();
@@ -143,7 +144,7 @@ async fn missing_bin_rejects() {
 #[wasm_bindgen_test]
 async fn fetch_failure_rejects_with_message() {
     let f = js_sys::Function::new_with_args("p", "return Promise.reject(new Error('auth expired'));");
-    let q = CachedVoxelQuery::open(LAYER_JSON.into(), 0, unique_ns("fail"), f)
+    let q = CachedVoxelQuery::open(LAYER_JSON.into(), 0, DB.into(), unique_ns("fail"), f)
         .await
         .unwrap();
     let (xs, ys, zs) = sample_points();
