@@ -1,17 +1,19 @@
+mod brick;
 mod layer;
 mod node;
 pub use node::Node;
-mod loaders;
 mod png;
+mod store;
 mod variable_index;
 mod voxel_layer;
 pub use layer::Layer;
-#[cfg(feature = "std")]
-pub use loaders::FileLoader;
-pub use loaders::{BinLoader, MemoryLoader};
 pub use png::to_png;
+#[cfg(feature = "std")]
+pub use store::LocalFileSystem;
+pub use store::{BinStore, Error, InMemory, Path as BinPath, Result};
 pub use variable_index::Index;
-pub use voxel_layer::VoxelLayer;
+pub use voxel_layer::{NodeKey, VoxelLayer};
+mod bin_reader;
 
 /*
 
@@ -33,6 +35,7 @@ v4 rayon per file?
 #[cfg(test)]
 mod tests {
     use crate::voxel_layer::VoxelLayer;
+    use futures::executor::block_on;
     use rstest::rstest;
 
     /// compare coordinate by coordinate reading of the slpk file against the netcdf file
@@ -61,11 +64,12 @@ mod tests {
 
         for t in 0..t_size {
             for z in 0..z_size {
+                block_on(layer.query_plane(i32::try_from(z).unwrap(), 0)).unwrap();
                 for y in 0..y_size {
                     for x in 0..x_size {
                         let windspeed_nc = windspeed_var.get_value::<f32, _>([t, z, y, x]).unwrap();
                         // format1 datasets declare no no-data value, so every read is `Some`.
-                        let windspeed_slpk = layer.query(x, y, z, 0);
+                        let windspeed_slpk = layer.query_cached(x, y, z, 0).unwrap();
                         assert_eq!(Some(windspeed_nc), windspeed_slpk);
                     }
                 }
@@ -100,7 +104,8 @@ mod tests {
 
                     let windspeed_nc = windspeed_var.get_value::<f32, _>([0, iz, iy, ix]).unwrap();
                     // format1 datasets declare no no-data value, so every read is `Some`.
-                    let windspeed_slpk = layer.query_geometry(x, y, z, 0).unwrap();
+                    let windspeed_slpk =
+                        block_on(layer.query_geometry(x, y, z, 0)).unwrap().unwrap();
                     assert_eq!(
                         windspeed_nc, windspeed_slpk,
                         "mismatch at ix={ix} iy={iy} iz={iz} (x={x} y={y} z={z})"
@@ -150,7 +155,8 @@ mod tests {
                             windspeed_var.get_value::<f32, _>([t, z, lat, lon]).unwrap();
                         // SLPK dimension order is [lon, lat, z, time], so query's (x, y)
                         // are (lon, lat).
-                        let windspeed_slpk = layer.query(lon, lat, z, WINDSPEED_ID);
+                        let windspeed_slpk =
+                            block_on(layer.query(lon, lat, z, WINDSPEED_ID)).unwrap();
                         match windspeed_slpk {
                             None => assert_eq!(
                                 windspeed_nc, NO_DATA,

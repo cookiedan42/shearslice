@@ -3,7 +3,11 @@ use wasm_bindgen::prelude::*;
 mod geom;
 mod voxeldata;
 pub use voxeldata::VoxelData;
-mod bundle;
+// mod bundle;
+mod cached_query;
+mod store;
+pub use cached_query::CachedVoxelQuery;
+pub use store::{IdbCache, JsFnStore};
 
 #[wasm_bindgen(start)]
 pub fn start() {
@@ -41,10 +45,7 @@ pub fn get_paths(url: &str, layer_json: &str, layer_id: usize) -> Vec<String> {
     res
 }
 
-pub(crate) fn get_keys<T: shearslice_core::BinLoader>(
-    layer: &VoxelLayer<T>,
-    layer_id: usize,
-) -> Vec<usize> {
+pub(crate) fn get_keys(layer: &VoxelLayer, layer_id: usize) -> Vec<usize> {
     let mut res = Vec::new();
     let paths = layer.layer().tails(layer_id);
 

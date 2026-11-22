@@ -1,5 +1,5 @@
 use hashbrown::HashMap;
-use shearslice_core::{MemoryLoader, VoxelLayer};
+use shearslice_core::VoxelLayer;
 use wasm_bindgen::prelude::*;
 
 /// Sentinel used in `BundlePlan::assignments` for a point that has no data:
@@ -39,7 +39,7 @@ impl BundlePlan {
 /// flight are ever resident in memory.
 #[wasm_bindgen]
 pub struct VoxelQuery {
-    layer: VoxelLayer<MemoryLoader>,
+    layer: VoxelLayer,
     layer_id: usize,
 }
 
@@ -50,7 +50,7 @@ impl VoxelQuery {
     #[wasm_bindgen(constructor)]
     #[must_use]
     pub fn new(layer_json: &str, layer_id: usize) -> Self {
-        let layer = VoxelLayer::<MemoryLoader>::from_layer_json(layer_json);
+        let layer = VoxelLayer::from_layer_json(layer_json);
         Self { layer, layer_id }
     }
 
@@ -102,17 +102,19 @@ impl VoxelQuery {
         zs: &[f32],
     ) -> Vec<f32> {
         self.layer
-            .preload_bin(self.layer_id, node_x, node_y, node_z, bytes);
+            .insert_node(self.layer_id, (node_x, node_y, node_z), bytes.into());
 
         let values = (0..xs.len())
             .map(|i| {
                 self.layer
-                    .query_geometry(xs[i], ys[i], zs[i], self.layer_id)
+                    .query_geometry_cached(xs[i], ys[i], zs[i], self.layer_id)
+                    .ok()
+                    .flatten()
                     .unwrap_or(f32::NAN)
             })
             .collect();
 
-        self.layer.evict_bin(self.layer_id, node_x, node_y, node_z);
+        self.layer.evict_bin(self.layer_id, (node_x, node_y, node_z));
 
         values
     }

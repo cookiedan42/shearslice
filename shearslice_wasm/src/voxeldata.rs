@@ -5,7 +5,7 @@ use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct VoxelData {
-    layer: shearslice_core::VoxelLayer<shearslice_core::MemoryLoader>,
+    layer: shearslice_core::VoxelLayer,
     layer_id: usize,
 }
 
@@ -28,8 +28,7 @@ impl VoxelData {
 
     /// Create a new VoxelData from a layer json and a typed array of values
     pub fn make_layer(layer: &str, values: Array, layer_id: usize) -> Self {
-        let layer =
-            shearslice_core::VoxelLayer::<shearslice_core::MemoryLoader>::from_layer_json(layer);
+        let layer = shearslice_core::VoxelLayer::from_layer_json(layer);
 
         let mut vec_values: Vec<Vec<u8>> = Vec::new();
 
@@ -51,7 +50,7 @@ impl VoxelData {
                 return (x, y, z, v);
             })
         {
-            layer.preload_bin(layer_id, x, y, z, v);
+            layer.insert_node(layer_id, (x, y, z), v.into());
         }
 
         Self { layer, layer_id }
@@ -72,7 +71,7 @@ impl VoxelData {
     /// No-data voxels are rendered as `f32::NAN`, which `apply_color_ramp`'s clamp turns
     /// into the bottom of the color ramp.
     pub fn query_plane(&self, z: i32) -> js_sys::Uint8Array {
-        let data = self.layer.query_plane(z).unwrap();
+        let data = self.layer.query_plane_cached(z, self.layer_id).unwrap();
         let (x_len, y_len) = self.plane_dims();
         let [s, e] = self.layer.layer().styles().variable_styles()[0]
             .transfer_function()
@@ -106,9 +105,10 @@ impl VoxelData {
     pub fn query_arr16(&self, arr16: &[u16], z: i32) -> js_sys::Uint8Array {
         let data = self
             .layer
-            .query_arr(
+            .query_arr_cached(
                 &arr16.iter().map(|v| *v as usize).collect::<Vec<usize>>(),
                 z,
+                self.layer_id,
             )
             .unwrap();
         let (x_len, y_len) = self.plane_dims();
@@ -142,7 +142,12 @@ impl VoxelData {
     pub fn query_arr_geometry(&self, arr: Vec<PointXyz>, layer_id: usize) -> js_sys::Uint8Array {
         let data = arr
             .iter()
-            .map(|v| self.layer.query_geometry(v.x, v.y, v.z, layer_id))
+            .map(|v| {
+                self.layer
+                    .query_geometry_cached(v.x, v.y, v.z, layer_id)
+                    .ok()
+                    .flatten()
+            })
             .collect::<Vec<_>>();
         let (x_len, y_len) = self.plane_dims();
         let [s, e] = self.layer.layer().styles().variable_styles()[0]
@@ -174,7 +179,9 @@ impl VoxelData {
     /// bounds or that voxel holds the variable's declared no-data value.
     pub fn query_geometry(&self, x: f32, y: f32, z: f32, layer_id: usize) -> f32 {
         self.layer
-            .query_geometry(x, y, z, layer_id)
+            .query_geometry_cached(x, y, z, layer_id)
+            .ok()
+            .flatten()
             .unwrap_or(f32::NAN)
     }
 }

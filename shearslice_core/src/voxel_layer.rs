@@ -1,221 +1,97 @@
 use crate::layer::Layer;
-use crate::loaders::{BinLoader, MemoryLoader};
+use crate::node::Node;
+use crate::store::{BinStore, Error, InMemory, Path, Result};
+use bytes::Bytes;
+use core::cell::RefCell;
+use hashbrown::{HashMap, HashSet};
+use std::sync::Arc;
 
 #[cfg(feature = "std")]
-use crate::loaders::FileLoader;
+use crate::store::LocalFileSystem;
 
-use crate::node;
-use core::cell::RefCell;
-use hashbrown::HashMap;
+/// Node origin in brick-index units; matches the `X-Y-Z` in a bin's file name.
+pub type NodeKey = (usize, usize, usize);
 
-pub struct VoxelLayer<L: BinLoader> {
+/// A voxel layer backed by any [`BinStore`].
+///
+/// Nodes are fetched lazily through the async methods and cached; the `*_cached`
+/// methods are synchronous and only read nodes that are already loaded.
+pub struct VoxelLayer {
     layer: Layer,
-    loader: L,
-    bins: RefCell<HashMap<(usize, usize, usize, usize), node::Node<f32>>>,
+    store: Arc<dyn BinStore>,
+    nodes: RefCell<HashMap<(usize, NodeKey), (Node<f32>, Bytes)>>,
     pub brick_size: [usize; 3],
     pub node_size: [usize; 3],
     pub apron_width: usize,
 }
 
 /// Constructors
-impl<L: BinLoader> VoxelLayer<L> {
-    /// Create a new VoxelLayer with a custom loader
-    pub fn with_loader(layer: Layer, loader: L) -> Self {
+impl VoxelLayer {
+    #[must_use]
+    pub fn new(layer: Layer, store: Arc<dyn BinStore>) -> Self {
         let node_size = layer.index().node_size();
         let brick_size = layer.index().brick_size();
         let apron_width = layer.index().apron_width();
-
         Self {
             layer,
-            loader,
-            bins: RefCell::new(HashMap::new()),
+            store,
+            nodes: RefCell::new(HashMap::new()),
             brick_size,
             node_size,
             apron_width,
         }
     }
 
-    /// The number of bricks actually stored in the node whose origin (in brick-index
-    /// units) is `(node_x, node_y, node_z)`, in each dimension.
-    ///
-    /// This is normally the configured `node_size`, but a node on the far edge of the
-    /// volume stores fewer bricks when the volume's brick grid doesn't divide evenly by
-    /// `node_size` (e.g. format2's 191-wide x axis has ceil(191/32)=6 bricks, so the node
-    /// at brick-offset 4 only stores 2 bricks in x, not a full 4).
-    fn node_brick_extents(&self, node_x: usize, node_y: usize, node_z: usize) -> [usize; 3] {
+    /// Layer with an empty in-memory store; feed it with [`Self::insert_node`].
+    #[must_use]
+    pub fn from_layer_json(json: &str) -> Self {
+        Self::new(Layer::from_str(json), Arc::new(InMemory::new()))
+    }
+
+    /// Open an unpacked eslpk directory.
+    #[cfg(feature = "std")]
+    #[must_use]
+    pub fn from_file(path: &str) -> Self {
+        let layer = Layer::from_file(&format!("{path}/layer.json"));
+        Self::new(layer, Arc::new(LocalFileSystem::new(path)))
+    }
+}
+
+/// Paths and geometry (pure, synchronous)
+impl VoxelLayer {
+    #[must_use]
+    pub const fn layer(&self) -> &Layer {
+        &self.layer
+    }
+
+    /// Path of the bin containing the grid index `(x, y, z)`.
+    #[must_use]
+    pub fn bin_path_for(&self, x: usize, y: usize, z: usize, layer_id: usize) -> Path {
+        Path::bin(layer_id, self.node_key_for_indices(x, y, z))
+    }
+
+    /// All bin paths needed to cover plane `z`.
+    #[must_use]
+    pub fn bin_paths_for_plane(&self, z: usize, layer_id: usize) -> Vec<Path> {
         let dims = self.layer.volumes()[0].dimensions();
-        let extent = |node_origin: usize, brick_size: usize, node_size: usize, dim_size: usize| {
-            let total_bricks = dim_size.div_ceil(brick_size);
-            total_bricks.saturating_sub(node_origin).min(node_size)
-        };
-        [
-            extent(
-                node_x,
-                self.brick_size[0],
-                self.node_size[0],
-                dims[0].size(),
-            ),
-            extent(
-                node_y,
-                self.brick_size[1],
-                self.node_size[1],
-                dims[1].size(),
-            ),
-            extent(
-                node_z,
-                self.brick_size[2],
-                self.node_size[2],
-                dims[2].size(),
-            ),
-        ]
-    }
-
-    /// Load a specific bin on demand
-    fn load_bin(&self, layer_id: usize, node_x: usize, node_y: usize, node_z: usize) {
-        let key = (layer_id, node_x, node_y, node_z);
-
-        if self.bins.borrow().contains_key(&key) {
-            return;
-        }
-
-        let bin_path = format!(
-            "variables/{}/0/bundles/0/{}-{}-{}.bin",
-            layer_id, node_x, node_y, node_z
-        );
-
-        let contents = self
-            .loader
-            .load(&bin_path)
-            .unwrap_or_else(|e| panic!("{}", e));
-
-        let [bx, by, bz] = self.node_brick_extents(node_x, node_y, node_z);
-        let node = node::Node::from_bin(
-            &contents,
-            bx,
-            by,
-            bz,
-            self.brick_size[0],
-            self.brick_size[1],
-            self.brick_size[2],
-            self.apron_width,
-            node_x * self.brick_size[0],
-            node_y * self.brick_size[1],
-            node_z * self.brick_size[2],
-        );
-
-        self.bins.borrow_mut().insert(key, node);
-    }
-
-    /// Preload a specific bin
-    pub fn preload_bin(
-        &self,
-        layer_id: usize,
-        node_x: usize,
-        node_y: usize,
-        node_z: usize,
-        data: Vec<u8>,
-    ) {
-        let key = (layer_id, node_x, node_y, node_z);
-
-        let [bx, by, bz] = self.node_brick_extents(node_x, node_y, node_z);
-        let node = node::Node::from_bin(
-            &data,
-            bx,
-            by,
-            bz,
-            self.brick_size[0],
-            self.brick_size[1],
-            self.brick_size[2],
-            self.apron_width,
-            node_x * self.brick_size[0],
-            node_y * self.brick_size[1],
-            node_z * self.brick_size[2],
-        );
-
-        self.bins.borrow_mut().insert(key, node);
-    }
-
-    /// Check if a bin is loaded
-    pub fn is_bin_loaded(
-        &self,
-        layer_id: usize,
-        node_x: usize,
-        node_y: usize,
-        node_z: usize,
-    ) -> bool {
-        self.bins
-            .borrow()
-            .contains_key(&(layer_id, node_x, node_y, node_z))
-    }
-
-    /// Get the bin path for a given coordinate
-    pub fn bin_path_for(&self, x: usize, y: usize, z: usize, layer_id: usize) -> String {
-        let brick_x = x / self.brick_size[0];
-        let brick_y = y / self.brick_size[1];
-        let brick_z = z / self.brick_size[2];
-
-        let node_x = brick_x / self.node_size[0] * self.node_size[0];
-        let node_y = brick_y / self.node_size[1] * self.node_size[1];
-        let node_z = brick_z / self.node_size[2] * self.node_size[2];
-
-        format!(
-            "variables/{}/0/bundles/0/{}-{}-{}.bin",
-            layer_id, node_x, node_y, node_z
-        )
-    }
-
-    /// Get all bin paths needed for a plane
-    pub fn bin_paths_for_plane(&self, z: usize, layer_id: usize) -> Vec<String> {
-        let x_len = self.layer.volumes()[0].dimensions()[0].size();
-        let y_len = self.layer.volumes()[0].dimensions()[1].size();
+        let (x_len, y_len) = (dims[0].size(), dims[1].size());
 
         let mut paths = Vec::new();
-        let mut seen = HashMap::new(); //TODO: use HashSet
-
+        let mut seen = HashSet::new();
         for x in (0..x_len).step_by(self.brick_size[0] * self.node_size[0]) {
             for y in (0..y_len).step_by(self.brick_size[1] * self.node_size[1]) {
                 let path = self.bin_path_for(x, y, z, layer_id);
-                if !seen.contains_key(&path) {
-                    seen.insert(path.clone(), ());
+                if seen.insert(path.clone()) {
                     paths.push(path);
                 }
             }
         }
-
         paths
-    }
-}
-
-/// File-based constructor
-#[cfg(feature = "std")]
-impl VoxelLayer<FileLoader> {
-    pub fn from_file(path: &str) -> Self {
-        let layer = Layer::from_file(&format!("{}/layer.json", path));
-        let loader = FileLoader::new(path);
-        Self::with_loader(layer, loader)
-    }
-}
-
-/// Memory-based constructor
-impl VoxelLayer<MemoryLoader> {
-    pub fn from_layer(layer: Layer) -> Self {
-        Self::with_loader(layer, MemoryLoader::new())
-    }
-
-    pub fn from_layer_json(json: &str) -> Self {
-        let layer = Layer::from_str(json);
-        Self::with_loader(layer, MemoryLoader::new())
-    }
-}
-
-/// Accessors
-impl<L: BinLoader> VoxelLayer<L> {
-    pub fn layer(&self) -> &Layer {
-        &self.layer
     }
 
     /// get all the x,y coordinates of the data
     /// used for elevation querying
+    #[must_use]
     pub fn get_xy(&self) -> Vec<(f32, f32)> {
         let x_vals = self.layer().volumes()[0].dimensions()[0].values();
         let y_vals = self.layer().volumes()[0].dimensions()[1].values();
@@ -225,41 +101,39 @@ impl<L: BinLoader> VoxelLayer<L> {
             .flat_map(|x| y_vals.iter().map(|y| (*x, *y)))
             .collect()
     }
-}
 
-/// Query data
-impl<L: BinLoader> VoxelLayer<L> {
     /// Convert a world/projected coordinate to a grid index.
     ///
     /// Vertical exaggeration is a rendering-only stretch applied when drawing the volume;
     /// it is not part of the stored grid geometry, so it is not applied here.
     #[must_use]
     pub fn indices_for_geometry(&self, x: f32, y: f32, z: f32) -> (usize, usize, usize) {
-        let x_index = self.layer().volumes()[0].dimensions()[0].find(x, None);
-        let y_index = self.layer().volumes()[0].dimensions()[1].find(y, None);
-        let z_index = self.layer().volumes()[0].dimensions()[2].find(z, None);
-
-        (x_index, y_index, z_index)
+        let dims = self.layer().volumes()[0].dimensions();
+        (
+            dims[0].find(x, None),
+            dims[1].find(y, None),
+            dims[2].find(z, None),
+        )
     }
 
     /// The node-origin key (in brick-index units) that a grid index falls in.
-    /// This is the same key used by the bin cache, `load_bin`/`preload_bin`, and `bin_path_for`.
+    /// This is the same key used by the node cache and `Path::bin`.
     #[must_use]
-    pub fn node_key_for_indices(&self, x: usize, y: usize, z: usize) -> (usize, usize, usize) {
+    pub fn node_key_for_indices(&self, x: usize, y: usize, z: usize) -> NodeKey {
         let brick_x = x / self.brick_size[0];
         let brick_y = y / self.brick_size[1];
         let brick_z = z / self.brick_size[2];
 
-        let node_x = brick_x / self.node_size[0] * self.node_size[0];
-        let node_y = brick_y / self.node_size[1] * self.node_size[1];
-        let node_z = brick_z / self.node_size[2] * self.node_size[2];
-
-        (node_x, node_y, node_z)
+        (
+            brick_x / self.node_size[0] * self.node_size[0],
+            brick_y / self.node_size[1] * self.node_size[1],
+            brick_z / self.node_size[2] * self.node_size[2],
+        )
     }
 
     /// The node-origin key that a world/projected coordinate falls in.
     #[must_use]
-    pub fn node_key_for_geometry(&self, x: f32, y: f32, z: f32) -> (usize, usize, usize) {
+    pub fn node_key_for_geometry(&self, x: f32, y: f32, z: f32) -> NodeKey {
         let (x_index, y_index, z_index) = self.indices_for_geometry(x, y, z);
         self.node_key_for_indices(x_index, y_index, z_index)
     }
@@ -289,90 +163,196 @@ impl<L: BinLoader> VoxelLayer<L> {
             && z <= zmax
     }
 
-    /// Drop a single cached node, freeing its memory.
-    pub fn evict_bin(&self, layer_id: usize, node_x: usize, node_y: usize, node_z: usize) {
-        self.bins
-            .borrow_mut()
-            .remove(&(layer_id, node_x, node_y, node_z));
-    }
-
-    /// Drop every cached node, freeing all bin memory held by this layer.
-    pub fn clear_bins(&self) {
-        self.bins.borrow_mut().clear();
-    }
-
-    /// Returns `None` if `(x, y, z)` falls outside the layer's extent, or if the queried
-    /// voxel holds the variable's declared no-data value.
-    /// takes world coordinates in same units as layer
-    pub fn query_geometry(&self, x: f32, y: f32, z: f32, layer_id: usize) -> Option<f32> {
-        if !self.in_extent(x, y, z) {
-            return None;
-        }
-        let (x_index, y_index, z_index) = self.indices_for_geometry(x, y, z);
-        self.query(x_index, y_index, z_index, layer_id)
-    }
-
-    /// Returns `None` if `(x, y, z)` falls outside the grid's dimensions, or if the queried
-    /// voxel holds the variable's declared no-data value.
-    /// takes index of the grid cell in the layer's grid
-    #[inline]
-    pub fn query(&self, x: usize, y: usize, z: usize, layer_id: usize) -> Option<f32> {
+    fn in_grid(&self, x: usize, y: usize, z: usize) -> bool {
         let dims = self.layer().volumes()[0].dimensions();
-        if x >= dims[0].size() || y >= dims[1].size() || z >= dims[2].size() {
-            return None;
+        x < dims[0].size() && y < dims[1].size() && z < dims[2].size()
+    }
+}
+
+/// Node cache (synchronous)
+impl VoxelLayer {
+    /// Parse and cache a node's bytes, replacing any existing entry.
+    pub fn insert_node(&self, layer_id: usize, key: NodeKey, bytes: Bytes) {
+        let node = Node::from_bin(
+            &bytes,
+            self.node_size,
+            self.brick_size[0],
+            self.brick_size[1],
+            self.brick_size[2],
+            self.apron_width,
+        );
+        self.nodes.borrow_mut().insert((layer_id, key), (node, bytes));
+    }
+
+    #[must_use]
+    pub fn is_bin_loaded(&self, layer_id: usize, key: NodeKey) -> bool {
+        self.nodes.borrow().contains_key(&(layer_id, key))
+    }
+
+    /// Drop a single cached node, freeing its memory.
+    pub fn evict_bin(&self, layer_id: usize, key: NodeKey) {
+        self.nodes.borrow_mut().remove(&(layer_id, key));
+    }
+
+    /// Drop every cached node.
+    pub fn clear_bins(&self) {
+        self.nodes.borrow_mut().clear();
+    }
+}
+
+/// Cache-only queries (synchronous). A node that isn't loaded yields `Error::NotFound`.
+impl VoxelLayer {
+    /// Returns `Ok(None)` if `(x, y, z)` is outside the grid or holds the variable's
+    /// no-data value.
+    ///
+    /// # Errors
+    /// `Error::NotFound` if the containing node isn't loaded.
+    pub fn query_cached(&self, x: usize, y: usize, z: usize, layer_id: usize) -> Result<Option<f32>> {
+        if !self.in_grid(x, y, z) {
+            return Ok(None);
         }
+        let key = self.node_key_for_indices(x, y, z);
+        let nodes = self.nodes.borrow();
+        let (node, bytes) = nodes
+            .get(&(layer_id, key))
+            .ok_or_else(|| Error::NotFound {
+                path: Path::bin(layer_id, key),
+            })?;
+        let raw = node.query(x, y, z, bytes);
 
-        let (node_x, node_y, node_z) = self.node_key_for_indices(x, y, z);
-
-        // Lazy load the bin if needed
-        self.load_bin(layer_id, node_x, node_y, node_z);
-
-        let bins = self.bins.borrow();
-        let bin_data = bins
-            .get(&(layer_id, node_x, node_y, node_z))
-            .unwrap_or_else(|| panic!("Bin data not found for {node_x},{node_y},{node_z}"));
-
-        let raw = bin_data.query(x, y, z);
-        match self.layer.no_data_for(layer_id) {
+        Ok(match self.layer.no_data_for(layer_id) {
             Some(no_data) if raw == no_data => None,
             _ => Some(raw),
-        }
+        })
     }
 
-    // z is the index of the plane, find all the values in that plane. `None` entries are
-    // voxels holding the variable's declared no-data value.
-    pub fn query_plane(&self, z: i32) -> Result<Vec<Option<f32>>, String> {
-        let x_len = self.layer().volumes()[0].dimensions()[0].size();
-        let y_len = self.layer().volumes()[0].dimensions()[1].size();
-        let z_len = self.layer().volumes()[0].dimensions()[2].size();
+    /// # Errors
+    /// `Error::NotFound` if the containing node isn't loaded.
+    pub fn query_geometry_cached(&self, x: f32, y: f32, z: f32, layer_id: usize) -> Result<Option<f32>> {
+        if !self.in_extent(x, y, z) {
+            return Ok(None);
+        }
+        let (xi, yi, zi) = self.indices_for_geometry(x, y, z);
+        self.query_cached(xi, yi, zi, layer_id)
+    }
+
+    /// Values of plane `z` (clamped), x-major. `None` marks no-data voxels.
+    ///
+    /// # Errors
+    /// `Error::NotFound` if a required node isn't loaded.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap, clippy::cast_sign_loss)]
+    pub fn query_plane_cached(&self, z: i32, layer_id: usize) -> Result<Vec<Option<f32>>> {
+        let dims = self.layer().volumes()[0].dimensions();
+        let (x_len, y_len, z_len) = (dims[0].size(), dims[1].size(), dims[2].size());
         let z = z.clamp(0, (z_len - 1) as i32) as usize;
 
-        Ok((0..x_len)
-            .flat_map(|x| (0..y_len).map(move |y| self.query(x, y, z, 0)))
-            .collect())
+        (0..x_len)
+            .flat_map(|x| (0..y_len).map(move |y| (x, y)))
+            .map(|(x, y)| self.query_cached(x, y, z, layer_id))
+            .collect()
     }
 
-    /// `None` entries are voxels holding the variable's declared no-data value.
-    pub fn query_arr(&self, arr: &[usize], z: i32) -> Result<Vec<Option<f32>>, String> {
-        let x_len = self.layer().volumes()[0].dimensions()[0].size();
-        let y_len = self.layer().volumes()[0].dimensions()[1].size();
+    /// # Errors
+    /// `Error::NotFound` if a required node isn't loaded.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap, clippy::cast_sign_loss)]
+    pub fn query_arr_cached(&self, arr: &[usize], z: i32, layer_id: usize) -> Result<Vec<Option<f32>>> {
+        let dims = self.layer().volumes()[0].dimensions();
+        let (x_len, y_len, z_len) = (dims[0].size(), dims[1].size(), dims[2].size());
+
+        arr.iter()
+            .enumerate()
+            .map(|(i, v)| {
+                // x1 and y1 are lat lon so need to be flipped
+                let x1 = i / x_len;
+                let y1 = i % y_len;
+                let z1 = (z + (*v as i32)).clamp(0, (z_len - 1) as i32) as usize;
+                self.query_cached(x1, y1, z1, layer_id)
+            })
+            .collect()
+    }
+}
+
+/// Async queries: fetch missing nodes from the store, then read from the cache.
+impl VoxelLayer {
+    /// Fetch a node from the store into the cache if it isn't there already.
+    ///
+    /// # Errors
+    /// Any error from the underlying [`BinStore`].
+    pub async fn load_node(&self, layer_id: usize, key: NodeKey) -> Result<()> {
+        // The RefCell borrow must not live across the await below.
+        if self.is_bin_loaded(layer_id, key) {
+            return Ok(());
+        }
+        let bytes = self.store.get(&Path::bin(layer_id, key)).await?;
+        self.insert_node(layer_id, key, bytes);
+        Ok(())
+    }
+
+    /// # Errors
+    /// Any error from the underlying [`BinStore`].
+    pub async fn query(&self, x: usize, y: usize, z: usize, layer_id: usize) -> Result<Option<f32>> {
+        if !self.in_grid(x, y, z) {
+            return Ok(None);
+        }
+        self.load_node(layer_id, self.node_key_for_indices(x, y, z)).await?;
+        self.query_cached(x, y, z, layer_id)
+    }
+
+    /// # Errors
+    /// Any error from the underlying [`BinStore`].
+    pub async fn query_geometry(&self, x: f32, y: f32, z: f32, layer_id: usize) -> Result<Option<f32>> {
+        if !self.in_extent(x, y, z) {
+            return Ok(None);
+        }
+        let (xi, yi, zi) = self.indices_for_geometry(x, y, z);
+        self.query(xi, yi, zi, layer_id).await
+    }
+
+    /// # Errors
+    /// Any error from the underlying [`BinStore`].
+    #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap, clippy::cast_sign_loss)]
+    pub async fn query_plane(&self, z: i32, layer_id: usize) -> Result<Vec<Option<f32>>> {
         let z_len = self.layer().volumes()[0].dimensions()[2].size();
+        let z = z.clamp(0, (z_len - 1) as i32) as usize;
+        self.load_plane(z, layer_id).await?;
+        self.query_plane_cached(z as i32, layer_id)
+    }
 
-        let r = arr.iter().enumerate().map(|(i, v)| {
-            // x1 and y1 are lat lon so need to be flipped
-            let x1 = i / x_len;
-            let y1 = i % y_len;
-            let z1 = (z + (*v as i32)).clamp(0, (z_len - 1) as i32) as usize;
-            self.query(x1, y1, z1, 0)
+    /// # Errors
+    /// Any error from the underlying [`BinStore`].
+    #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap, clippy::cast_sign_loss)]
+    pub async fn query_arr(&self, arr: &[usize], z: i32, layer_id: usize) -> Result<Vec<Option<f32>>> {
+        let z_len = self.layer().volumes()[0].dimensions()[2].size();
+        // each point may land on a different plane, so load every plane it can touch
+        let (lo, hi) = arr.iter().fold((usize::MAX, 0), |(lo, hi), v| {
+            let zz = (z + (*v as i32)).clamp(0, (z_len - 1) as i32) as usize;
+            (lo.min(zz), hi.max(zz))
         });
+        if lo <= hi {
+            for zz in lo..=hi {
+                self.load_plane(zz, layer_id).await?;
+            }
+        }
+        self.query_arr_cached(arr, z, layer_id)
+    }
 
-        Ok(r.collect())
+    /// Load every node intersecting plane `z`.
+    async fn load_plane(&self, z: usize, layer_id: usize) -> Result<()> {
+        let dims = self.layer().volumes()[0].dimensions();
+        let (x_len, y_len) = (dims[0].size(), dims[1].size());
+        for x in (0..x_len).step_by(self.brick_size[0] * self.node_size[0]) {
+            for y in (0..y_len).step_by(self.brick_size[1] * self.node_size[1]) {
+                self.load_node(layer_id, self.node_key_for_indices(x, y, z)).await?;
+            }
+        }
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures::executor::block_on;
 
     #[test]
     fn test_from_file() {
@@ -391,19 +371,37 @@ mod tests {
         // plan and query must agree on which node a point lives in
         let planned_key = layer.node_key_for_geometry(x, y, z);
         let (ix, iy, iz) = layer.indices_for_geometry(x, y, z);
-        let queried_key = layer.node_key_for_indices(ix, iy, iz);
-        assert_eq!(planned_key, queried_key);
+        assert_eq!(planned_key, layer.node_key_for_indices(ix, iy, iz));
 
-        assert!(!layer.is_bin_loaded(layer_id, planned_key.0, planned_key.1, planned_key.2));
-        let _value = layer.query_geometry(x, y, z, layer_id);
-        assert!(layer.is_bin_loaded(layer_id, planned_key.0, planned_key.1, planned_key.2));
+        assert!(!layer.is_bin_loaded(layer_id, planned_key));
+        // cache-only query on an unloaded node reports NotFound
+        assert!(matches!(
+            layer.query_geometry_cached(x, y, z, layer_id),
+            Err(Error::NotFound { .. })
+        ));
+        let _ = block_on(layer.query_geometry(x, y, z, layer_id)).unwrap();
+        assert!(layer.is_bin_loaded(layer_id, planned_key));
 
-        layer.evict_bin(layer_id, planned_key.0, planned_key.1, planned_key.2);
-        assert!(!layer.is_bin_loaded(layer_id, planned_key.0, planned_key.1, planned_key.2));
+        layer.evict_bin(layer_id, planned_key);
+        assert!(!layer.is_bin_loaded(layer_id, planned_key));
 
-        let _value = layer.query_geometry(x, y, z, layer_id);
+        let _ = block_on(layer.query_geometry(x, y, z, layer_id)).unwrap();
         layer.clear_bins();
-        assert!(!layer.is_bin_loaded(layer_id, planned_key.0, planned_key.1, planned_key.2));
+        assert!(!layer.is_bin_loaded(layer_id, planned_key));
+    }
+
+    #[test]
+    fn test_missing_bin_is_error_not_panic() {
+        let layer = VoxelLayer::from_file("../data/256");
+        let mem = VoxelLayer::new(
+            Layer::from_file("../data/256/layer.json"),
+            Arc::new(InMemory::new()),
+        );
+        assert!(layer.query_cached(0, 0, 0, 0).is_err());
+        assert!(matches!(
+            block_on(mem.query(0, 0, 0, 0)),
+            Err(Error::NotFound { .. })
+        ));
     }
 
     #[test]
@@ -418,8 +416,7 @@ mod tests {
         let y = dims[1].values()[0];
         let z = dims[2].values()[0];
 
-        // must not panic
-        let _ = layer.query_geometry(x, y, z, 0);
+        let _ = block_on(layer.query_geometry(x, y, z, 0));
     }
 
     #[test]
@@ -479,14 +476,14 @@ mod tests {
         );
 
         // sanity: an in-bounds point returns Some
-        assert!(layer.query_geometry(x, y, z, 0).is_some());
+        assert!(block_on(layer.query_geometry(x, y, z, 0)).unwrap().is_some());
 
         let extent = layer.layer().extent();
         assert_eq!(
-            layer.query_geometry((extent.xmax() + 1000.0) as f32, y, z, 0),
+            block_on(layer.query_geometry((extent.xmax() + 1000.0) as f32, y, z, 0)).unwrap(),
             None
         );
-        assert_eq!(layer.query_geometry(f32::NAN, y, z, 0), None);
+        assert_eq!(block_on(layer.query_geometry(f32::NAN, y, z, 0)).unwrap(), None);
     }
 
     #[test]
@@ -496,11 +493,11 @@ mod tests {
         let (x_len, y_len, z_len) = (dims[0].size(), dims[1].size(), dims[2].size());
 
         // sanity: the last valid index still returns Some
-        assert!(layer.query(x_len - 1, y_len - 1, z_len - 1, 0).is_some());
+        assert!(block_on(layer.query(x_len - 1, y_len - 1, z_len - 1, 0)).unwrap().is_some());
 
         // one past the end on each axis individually must not panic and must return None
-        assert_eq!(layer.query(x_len, 0, 0, 0), None);
-        assert_eq!(layer.query(0, y_len, 0, 0), None);
-        assert_eq!(layer.query(0, 0, z_len, 0), None);
+        assert_eq!(block_on(layer.query(x_len, 0, 0, 0)).unwrap(), None);
+        assert_eq!(block_on(layer.query(0, y_len, 0, 0)).unwrap(), None);
+        assert_eq!(block_on(layer.query(0, 0, z_len, 0)).unwrap(), None);
     }
 }
